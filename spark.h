@@ -1,1 +1,0 @@
-/usr/discreet/presets/2018.2/sparks/spark.h

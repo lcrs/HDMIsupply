@@ -1,27 +1,15 @@
-CFLAGS = -march=core2 -mtune=native -fPIC -DDL_LITTLE_ENDIAN
-LDFLAGS = -fPIC
+Ls_Spigot: Ls_Spigot.cpp Makefile
+	g++ -o Ls_Spigot Ls_Spigot.cpp decklink/mac/DeckLinkAPIDispatch.cpp -lm -ldl -lpthread -framework CoreFoundation
 
-ifeq ($(shell uname), Darwin)
-	CFLAGS += -D_DARWIN_USE_64_BIT_INODE
-	LDFLAGS += -dynamiclib -undefined dynamic_lookup
-	EXT = spark
-endif
-ifeq ($(shell uname), Linux)
-	CFLAGS += -D_LARGEFILE64_SOURCE -D_FILE_OFFSET_BITS=64
-	LDFLAGS += -shared -Bsymbolic
-	EXT = spark_x86_64
-endif
 
-all: batchcachetest.$(EXT)
-
-batchcachetest.$(EXT): batchcachetest.o Makefile
-	g++ $(LDFLAGS) batchcachetest.o -o batchcachetest.$(EXT)
-
-batchcachetest.o: batchcachetest.cpp half.h halfExport.h spark.h Makefile
-	g++ $(CFLAGS) -c batchcachetest.cpp -o batchcachetest.o
-
-spark.h: Makefile
-	ln -sf `ls /usr/discreet/presets/*/sparks/spark.h | head -n1` spark.h
-
-clean:
-	rm -f batchcachetest.spark batchcachetest.spark_x86_64 batchcachetest.o spark.h
+#CC=g++
+#SDK_PATH=../../include
+#CFLAGS=-Wno-multichar -I $(SDK_PATH) -fno-rtti
+#LDFLAGS=-lm -ldl -lpthread
+#
+#DeviceList: main.cpp $(SDK_PATH)/DeckLinkAPIDispatch.cpp
+#	$(CC) -o DeviceList main.cpp $(SDK_PATH)/DeckLinkAPIDispatch.cpp $(CFLAGS) $(LDFLAGS)
+#
+#clean:
+#	rm -f DeviceList
+#
