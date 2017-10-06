@@ -5,13 +5,11 @@ using namespace std;
 int main(int argc, char **argv) {
 	IDeckLinkIterator *dli = CreateDeckLinkIteratorInstance();
 	IDeckLink *dl;
+	IDeckLinkInput *dlin;
+	spigotCb cb;
 
-	while(dli->Next(&dl) == S_OK) {
-		CFStringRef mns;				
-		dl->GetModelName(&mns);
-
-		char mn[99];		
-		CFStringGetCString(mns, mn, sizeof(mn), kCFStringEncodingUTF8);
-		cout << mn << endl;
-	}
+	dli->Next(&dl);
+	dl->QueryInterface(IID_IDeckLinkInput, (void **)&dlin);
+	dlin->EnableVideoInput(bmdModeHD1080p25, bmdFormat10BitYUV, bmdVideoInputFlagDefault);
+	dlin->SetCallback(&cb);
 }
