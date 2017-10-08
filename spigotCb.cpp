@@ -10,9 +10,9 @@ HRESULT spigotCb::VideoInputFormatChanged(BMDVideoInputFormatChangedEvents e, ID
 }
 
 HRESULT	spigotCb::VideoInputFrameArrived(IDeckLinkVideoInputFrame* f, IDeckLinkAudioInputPacket* a) {
-	void *b;
+	char *b;
 	f->GetBytes((void **)&b);
-	cout << b << endl;
+	cout << b[2010] << endl;
 	return 0;
 }
 
