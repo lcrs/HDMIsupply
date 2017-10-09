@@ -5,14 +5,17 @@
 #include "spigotCb.h"
 using namespace std;
 
+extern char *dlbuf;
+
 HRESULT spigotCb::VideoInputFormatChanged(BMDVideoInputFormatChangedEvents e, IDeckLinkDisplayMode* dm, BMDDetectedVideoInputFormatFlags f) {
 	return 0;
 }
 
 HRESULT	spigotCb::VideoInputFrameArrived(IDeckLinkVideoInputFrame* f, IDeckLinkAudioInputPacket* a) {
-	char *b;
+	void *b;
 	f->GetBytes((void **)&b);
-	cout << b[2010] << endl;
+	memcpy(dlbuf, b, 2 * 1024 * 1024);
+	cout << "frame " << b << endl << flush;
 	return 0;
 }
 

@@ -1,6 +1,7 @@
 // The class which handles the frame received callback
 // from the Decklink API
 
+#include "spark.h"
 #include "decklink/mac/DeckLinkAPI.h"
 
 class spigotCb : public IDeckLinkInputCallback {
