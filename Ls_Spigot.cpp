@@ -7,7 +7,7 @@ using namespace std;
 
 IDeckLinkInput *dlin;
 spigotCb cb;
-IDeckLinkVideoInputFrame *fNext = NULL;
+void *fbuf;
 
 int sparkBuf(int n, SparkMemBufStruct *b) {
 	if(!sparkMemGetBuffer(n, b)) {
@@ -46,6 +46,8 @@ unsigned int SparkInitialise(SparkInfoStruct si) {
 	IDeckLinkIterator *dli;
 	IDeckLink *dl;
 
+	fbuf = malloc(5120 * 1080);
+
 	dli = CreateDeckLinkIteratorInstance();
 	dli->Next(&dl);
 	dl->QueryInterface(IID_IDeckLinkInput, (void **)&dlin);
@@ -60,21 +62,8 @@ unsigned int SparkInitialise(SparkInfoStruct si) {
 unsigned long *SparkProcess(SparkInfoStruct si) {
 	SparkMemBufStruct buf;
 	sparkBuf(1, &buf);
-	
-	if(fNext == NULL) {
-		usleep(10 * 1000);
-		return buf.Buffer;
-	}
 
-	void *b;
-	fNext->GetBytes(&b);
-	int stride = fNext->GetRowBytes();
-	int h = fNext->GetHeight();
-
-	memcpy(buf.Buffer, b, h * stride);
-
-	fNext->Release();
-	fNext = NULL;
+	memcpy(buf.Buffer, fbuf, 5120 * 1080);
 
 	return buf.Buffer; // N.B. this is some bullshit, the pointer returned is rudely ignored
 }
