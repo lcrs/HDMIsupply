@@ -27,7 +27,7 @@ DeckLinkAPIDispatch.o: decklink/mac/DeckLinkAPIDispatch.cpp *.h Makefile
 	g++ $(CFLAGS) -c decklink/mac/DeckLinkAPIDispatch.cpp
 
 spark.h: Makefile
-	ln -sf `ls /usr/discreet/presets/*/sparks/spark.h | head -n1` spark.h
+	ln -sf `ls /opt/Autodesk/presets/*/sparks/spark.h | head -n1` spark.h
 
 clean:
 	rm -f Ls_Spigot.spark Ls_Spigot.spark_x86_64 *.o spark.h

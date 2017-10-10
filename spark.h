@@ -1,1 +1,1 @@
-/usr/discreet/presets/2018.2/sparks/spark.h
+/opt/Autodesk/presets/2018.2/sparks/spark.h
