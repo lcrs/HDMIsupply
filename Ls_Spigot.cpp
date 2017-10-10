@@ -5,11 +5,9 @@
 #include "spigotCb.h"
 using namespace std;
 
-int bufid;
-SparkMemBufStruct buf;
 IDeckLinkInput *dlin;
 spigotCb cb;
-char *dlbuf;
+IDeckLinkVideoInputFrame *fNext = NULL;
 
 int sparkBuf(int n, SparkMemBufStruct *b) {
 	if(!sparkMemGetBuffer(n, b)) {
@@ -42,7 +40,6 @@ int SparkClips(void) {
 }
 
 void SparkMemoryTempBuffers(void) {
-	bufid = sparkMemRegisterBuffer();
 }
 
 unsigned int SparkInitialise(SparkInfoStruct si) {
@@ -50,22 +47,35 @@ unsigned int SparkInitialise(SparkInfoStruct si) {
 	IDeckLink *dl;
 
 	dli = CreateDeckLinkIteratorInstance();
-	cout << "dli " << dli << endl;
 	dli->Next(&dl);
-	cout << "dl " << dl << endl;
 	dl->QueryInterface(IID_IDeckLinkInput, (void **)&dlin);
-	cout << "dlin " << dlin << endl << flush;
 	dlin->EnableVideoInput(bmdModeHD1080p25, bmdFormat10BitYUV, bmdVideoInputFlagDefault);
 	dlin->SetCallback(&cb);
 	dlin->StartStreams();
+	cout << "streams started" << endl << flush;
 
-	dlbuf = (char *) malloc(20 * 1024 * 1024);
 	return(SPARK_MODULE);
 }
 
 unsigned long *SparkProcess(SparkInfoStruct si) {
+	SparkMemBufStruct buf;
 	sparkBuf(1, &buf);
-	memcpy(buf.Buffer, dlbuf, 2 * 1024 * 1024);
+	
+	if(fNext == NULL) {
+		usleep(10 * 1000);
+		return buf.Buffer;
+	}
+
+	void *b;
+	fNext->GetBytes(&b);
+	int stride = fNext->GetRowBytes();
+	int h = fNext->GetHeight();
+
+	memcpy(buf.Buffer, b, h * stride);
+
+	fNext->Release();
+	fNext = NULL;
+
 	return buf.Buffer; // N.B. this is some bullshit, the pointer returned is rudely ignored
 }
 
