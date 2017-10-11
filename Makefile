@@ -1,4 +1,4 @@
-CFLAGS = -march=core2 -mtune=native -fPIC -DDL_LITTLE_ENDIAN
+CFLAGS = -march=core2 -mtune=native -fPIC -DDL_LITTLE_ENDIAN -O3
 LDFLAGS = -fPIC
 
 ifeq ($(shell uname), Darwin)

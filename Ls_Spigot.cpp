@@ -1,6 +1,7 @@
 #include <iostream>
 #include <unistd.h>
 #include "spark.h"
+#include "half.h"
 #include "decklink/mac/DeckLinkAPI.h"
 #include "spigotCb.h"
 using namespace std;
@@ -23,12 +24,8 @@ int sparkBuf(int n, SparkMemBufStruct *b) {
 
 int SparkIsInputFormatSupported(SparkPixelFormat fmt) {
 	switch(fmt) {
-		case SPARKBUF_RGB_24_3x8:
-		case SPARKBUF_RGB_48_3x10:
-		case SPARKBUF_RGB_48_3x12:
 		case SPARKBUF_RGB_48_3x16_FP:
 			return 1;
-		break;
 		default:
 			cout << "Ls_Spigot: unhandled pixel depth " << fmt <<", failing!" << endl;
 			return 0;
@@ -63,7 +60,16 @@ unsigned long *SparkProcess(SparkInfoStruct si) {
 	SparkMemBufStruct buf;
 	sparkBuf(1, &buf);
 
-	memcpy(buf.Buffer, fbuf, 5120 * 1080);
+	for(int row = 0; row < 1080; row++) {
+		for(int col = 0; col < 1920; col+=6) {
+			char *v210_addr = (char *)fbuf + (1080 - row) * 5120 + ((col / 6) * 16);
+			char *rgb_addr = (char *)buf.Buffer + row * buf.Stride + col * buf.Inc;
+			uint32_t *v210 = (uint32_t *)v210_addr;
+			half *rgb = (half *)rgb_addr;
+			uint16_t y0 = (*v210 >> 10) & 0x000003ff;
+			rgb[0] = rgb[3] = rgb[6] = rgb[9] = rgb[12] = rgb[15] = y0 / 1024.0;
+		}
+	}
 
 	return buf.Buffer; // N.B. this is some bullshit, the pointer returned is rudely ignored
 }
