@@ -1,4 +1,5 @@
-CFLAGS = -march=core2 -mtune=native -fPIC -DDL_LITTLE_ENDIAN -O3
+# Remember some people do still have Core2Duos or whatever...
+CFLAGS = -march=native -mtune=native -fPIC -DDL_LITTLE_ENDIAN -O3
 LDFLAGS = -fPIC
 
 ifeq ($(shell uname), Darwin)

@@ -1,4 +1,5 @@
 #include <iostream>
+#include <sys/time.h>
 #include <unistd.h>
 #include "spark.h"
 #include "half.h"
@@ -27,7 +28,6 @@ int SparkIsInputFormatSupported(SparkPixelFormat fmt) {
 		case SPARKBUF_RGB_48_3x16_FP:
 			return 1;
 		default:
-			cout << "Ls_Spigot: unhandled pixel depth " << fmt <<", failing!" << endl;
 			return 0;
 	}
 }
@@ -57,19 +57,41 @@ unsigned int SparkInitialise(SparkInfoStruct si) {
 }
 
 unsigned long *SparkProcess(SparkInfoStruct si) {
+	static struct timespec s, e, last;
+	last = s;
+	clock_gettime(CLOCK_REALTIME, &s);
+	float ms = (s.tv_nsec - last.tv_nsec) / 1000000.0;
+	cout << ms << "ms since last process call" << endl;
+	
 	SparkMemBufStruct buf;
 	sparkBuf(1, &buf);
 
-	for(int row = 0; row < 1080; row++) {
-		for(int col = 0; col < 1920; col+=6) {
-			char *v210_addr = (char *)fbuf + (1080 - row) * 5120 + ((col / 6) * 16);
-			char *rgb_addr = (char *)buf.Buffer + row * buf.Stride + col * buf.Inc;
-			uint32_t *v210 = (uint32_t *)v210_addr;
-			half *rgb = (half *)rgb_addr;
-			uint16_t y0 = (*v210 >> 10) & 0x000003ff;
-			rgb[0] = rgb[3] = rgb[6] = rgb[9] = rgb[12] = rgb[15] = y0 / 1024.0;
-		}
+	uint16_t *rgb = (uint16_t *)buf.Buffer;
+	uint32_t *v210 = (uint32_t *)fbuf;
+
+
+	while(rgb < (uint16_t *)buf.Buffer + (1920 * 1080 * 3)) {
+		uint16_t y0 = (v210[0] >> 10) & 0x000003ff;
+		uint16_t y1 = (v210[1] >>  0) & 0x000003ff;
+		uint16_t y2 = (v210[1] >> 20) & 0x000003ff;
+		uint16_t y3 = (v210[2] >> 10) & 0x000003ff;
+		uint16_t y4 = (v210[3] >>  0) & 0x000003ff;
+		uint16_t y5 = (v210[3] >> 20) & 0x000003ff;
+		v210 += 4;
+
+		rgb[0] = y0 << 4;
+		rgb[3] = y1 << 4;
+		rgb[6] = y2 << 4;
+		rgb[9] = y3 << 4;
+		rgb[12] = y4 << 4;
+		rgb[15] = y5 << 4;
+		rgb += 6 * 3;
 	}
+
+	clock_gettime(CLOCK_REALTIME, &e);
+	ms = (e.tv_nsec - s.tv_nsec) / 1000000.0;
+	cout << ms << "ms to convert buffer" << endl;
+
 
 	return buf.Buffer; // N.B. this is some bullshit, the pointer returned is rudely ignored
 }
