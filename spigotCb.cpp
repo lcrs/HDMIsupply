@@ -5,7 +5,7 @@
 #include "spigotCb.h"
 using namespace std;
 
-extern void *fbuf;
+extern char *fbuf;
 
 HRESULT spigotCb::VideoInputFormatChanged(BMDVideoInputFormatChangedEvents e, IDeckLinkDisplayMode *dm, BMDDetectedVideoInputFormatFlags f) {
 	return 0;
