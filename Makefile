@@ -18,7 +18,7 @@ all: Ls_Spigot.$(EXT)
 Ls_Spigot.$(EXT): Ls_Spigot.o spigotCb.o DeckLinkAPIDispatch.o Makefile
 	g++ $(LDFLAGS) Ls_Spigot.o spigotCb.o DeckLinkAPIDispatch.o -o Ls_Spigot.$(EXT)
 
-Ls_Spigot.o: Ls_Spigot.cpp *.h Makefile
+Ls_Spigot.o: Ls_Spigot.cpp *.h Makefile spark.h
 	g++ $(CFLAGS) -c Ls_Spigot.cpp
 
 spigotCb.o: spigotCb.cpp *.h Makefile
