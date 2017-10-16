@@ -9,7 +9,8 @@ using namespace std;
 
 IDeckLinkInput *dlin;
 spigotCb cb;
-char *fbuf;
+char *fb1, *fb2;
+int readyfb = 1;
 
 int sparkBuf(int n, SparkMemBufStruct *b) {
 	if(!sparkMemGetBuffer(n, b)) {
@@ -43,7 +44,8 @@ unsigned int SparkInitialise(SparkInfoStruct si) {
 	IDeckLinkIterator *dli;
 	IDeckLink *dl;
 
-	fbuf = (char *)malloc(5120 * 1080);
+	fb1 = (char *)malloc(5120 * 1080);
+	fb2 = (char *)malloc(5120 * 1080);
 
 	dli = CreateDeckLinkIteratorInstance();
 	dli->Next(&dl);
@@ -61,19 +63,25 @@ unsigned long *SparkProcess(SparkInfoStruct si) {
 	last = s;
 	clock_gettime(CLOCK_REALTIME, &s);
 	float ms = (s.tv_nsec - last.tv_nsec) / 1000000.0;
-	cout << ms << "ms since last process call" << endl;
+	cout << ms << "ms since last process call   ";
 
 	SparkMemBufStruct buf;
 	sparkBuf(1, &buf);
 	
-
 	/* TODO:
-		double buffering
 		re-entrancy
 		chroma interpolation
 		speed
 		safety
 	*/
+
+	char *fbuf;
+	if(readyfb == 1) {
+		fbuf = fb1;
+	} else {
+		fbuf = fb2;
+	}
+
 	for(int row = 0; row < 1080; row++) {
 		half *rgb = (half *)((char *)buf.Buffer + row * buf.Stride);
 		int *v210 = (int *)((fbuf + 5120 * 1080) - (row + 1) * 5120);

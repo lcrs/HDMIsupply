@@ -5,7 +5,8 @@
 #include "spigotCb.h"
 using namespace std;
 
-extern char *fbuf;
+extern char *fb1, *fb2;
+extern int readyfb;
 
 HRESULT spigotCb::VideoInputFormatChanged(BMDVideoInputFormatChangedEvents e, IDeckLinkDisplayMode *dm, BMDDetectedVideoInputFormatFlags f) {
 	return 0;
@@ -14,7 +15,22 @@ HRESULT spigotCb::VideoInputFormatChanged(BMDVideoInputFormatChangedEvents e, ID
 HRESULT	spigotCb::VideoInputFrameArrived(IDeckLinkVideoInputFrame *f, IDeckLinkAudioInputPacket *a) {
 	void *b;
 	f->GetBytes(&b);
+
+	char *fbuf;
+	if(readyfb == 1) {
+		fbuf = fb2;
+	} else {
+		fbuf = fb1;
+	}
+
 	memcpy(fbuf, b, 5120 * 1080);
+
+	if(readyfb == 1) {
+		readyfb = 2;
+	} else {
+		readyfb = 1;
+	}
+
 	return 0;
 }
 
