@@ -58,33 +58,19 @@ unsigned int SparkInitialise(SparkInfoStruct si) {
 	return(SPARK_MODULE);
 }
 
-unsigned long *SparkProcess(SparkInfoStruct si) {
-	static struct timespec s, e, last;
-	last = s;
-	clock_gettime(CLOCK_REALTIME, &s);
-	float ms = (s.tv_nsec - last.tv_nsec) / 1000000.0;
-	cout << ms << "ms since last process call   ";
+void threadProc(char *from, SparkMemBufStruct *to) {
+	unsigned long offset, pixels;
+	sparkMpInfo(&offset, &pixels);
+	int thread = 16 * offset / (1920 * 1080);
+	int rowcount = 1080 / 16;
+	int rowstart = thread * rowcount;
 
-	SparkMemBufStruct buf;
-	sparkBuf(1, &buf);
-	
-	/* TODO:
-		re-entrancy
-		chroma interpolation
-		speed
-		safety
-	*/
+	// 1080 rows don't divide across 16 threads
+	if(thread == 15) rowcount += 8;
 
-	char *fbuf;
-	if(readyfb == 1) {
-		fbuf = fb1;
-	} else {
-		fbuf = fb2;
-	}
-
-	for(int row = 0; row < 1080; row++) {
-		half *rgb = (half *)((char *)buf.Buffer + row * buf.Stride);
-		int *v210 = (int *)((fbuf + 5120 * 1080) - (row + 1) * 5120);
+	for(int row = rowstart; row < rowstart + rowcount; row++) {
+		half *rgb = (half *)((char *)to->Buffer + row * to->Stride);
+		int *v210 = (int *)((from + 5120 * 1080) - (row + 1) * 5120);
 
 		for(int chunk = 0; chunk < 1920 / 6; chunk++) {
 			float y0 = (v210[0] >> 10) & 0x000003ff;
@@ -141,6 +127,33 @@ unsigned long *SparkProcess(SparkInfoStruct si) {
 			rgb += 6 * 3;
 		}
 	}
+}
+
+unsigned long *SparkProcess(SparkInfoStruct si) {
+	static struct timespec s, e, last;
+	last = s;
+	clock_gettime(CLOCK_REALTIME, &s);
+	float ms = (s.tv_nsec - last.tv_nsec) / 1000000.0;
+	cout << ms << "ms since last process call   ";
+
+	SparkMemBufStruct buf;
+	sparkBuf(1, &buf);
+	
+	/* TODO:
+		re-entrancy
+		chroma interpolation
+		sync speed?
+		safety
+	*/
+
+	char *fbuf;
+	if(readyfb == 1) {
+		fbuf = fb1;
+	} else {
+		fbuf = fb2;
+	}
+
+	sparkMpFork((void(*)())threadProc, 2, fbuf, &buf);
 
 	clock_gettime(CLOCK_REALTIME, &e);
 	ms = (e.tv_nsec - s.tv_nsec) / 1000000.0;
