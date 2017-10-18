@@ -73,6 +73,7 @@ void threadProc(char *from, SparkMemBufStruct *to) {
 		int *v210 = (int *)((from + 5120 * 1080) - (row + 1) * 5120);
 
 		for(int chunk = 0; chunk < 1920 / 6; chunk++) {
+			// Unpack 10bit YCbCr pixels from this 4:2:2 v210 format 32-byte chunk
 			float y0 = (v210[0] >> 10) & 0x000003ff;
 			float y1 = (v210[1] >>  0) & 0x000003ff;
 			float y2 = (v210[1] >> 20) & 0x000003ff;
@@ -86,6 +87,18 @@ void threadProc(char *from, SparkMemBufStruct *to) {
 			float cb2 = (v210[1] >> 10) & 0x000003ff;
 			float cb4 = (v210[2] >> 20) & 0x000003ff;
 
+			// We need the next two chroma samples for interpolation
+			float cr6, cb6;
+			if(chunk == (1920 / 6) - 1) {
+				// ...but not if we would read beyond this row
+				cr6 = cr4;
+				cb6 = cb4;
+			} else {
+				cr6 = (v210[4] >> 20) & 0x000003ff;
+				cb6 = (v210[4] >> 00) & 0x000003ff;
+			}
+
+			// Remove offsets, gains are handled in the matrix below
 			y0 = y0 - 64.0;
 			y1 = y1 - 64.0;
 			y2 = y2 - 64.0;
@@ -95,34 +108,46 @@ void threadProc(char *from, SparkMemBufStruct *to) {
 			cr0 = cr0 - 512.0;
 			cr2 = cr2 - 512.0;
 			cr4 = cr4 - 512.0;
+			cr6 = cr6 - 512.0;
 			cb0 = cb0 - 512.0;
 			cb2 = cb2 - 512.0;
 			cb4 = cb4 - 512.0;
+			cb6 = cb6 - 512.0;
 
+			// Interpolate missing chroma samples from those either side
+			float cr1 = (cr0 + cr2) * 0.5;
+			float cr3 = (cr2 + cr4) * 0.5;
+			float cr5 = (cr4 + cr6) * 0.5;
+			float cb1 = (cb0 + cb2) * 0.5;
+			float cb3 = (cb2 + cb4) * 0.5;
+			float cb5 = (cb4 + cb6) * 0.5;
+
+			// Apply Rec709 YCbCr to RGB matrix
 			rgb[0] = (y0 * 1.164 + cb0 *  0.000 + cr0 *  1.793) / 1023.0;
 			rgb[1] = (y0 * 1.164 + cb0 * -0.213 + cr0 * -0.533) / 1023.0;
 			rgb[2] = (y0 * 1.164 + cb0 *  2.112 + cr0 *  0.000) / 1023.0;
 
-			rgb[3] = (y1 * 1.164 + cb0 *  0.000 + cr0 *  1.793) / 1023.0;
-			rgb[4] = (y1 * 1.164 + cb0 * -0.213 + cr0 * -0.533) / 1023.0;
-			rgb[5] = (y1 * 1.164 + cb0 *  2.112 + cr0 *  0.000) / 1023.0;
+			rgb[3] = (y1 * 1.164 + cb1 *  0.000 + cr1 *  1.793) / 1023.0;
+			rgb[4] = (y1 * 1.164 + cb1 * -0.213 + cr1 * -0.533) / 1023.0;
+			rgb[5] = (y1 * 1.164 + cb1 *  2.112 + cr1 *  0.000) / 1023.0;
 
 			rgb[6] = (y2 * 1.164 + cb2 *  0.000 + cr2 *  1.793) / 1023.0;
 			rgb[7] = (y2 * 1.164 + cb2 * -0.213 + cr2 * -0.533) / 1023.0;
 			rgb[8] = (y2 * 1.164 + cb2 *  2.112 + cr2 *  0.000) / 1023.0;
 
-			rgb[9]  = (y3 * 1.164 + cb2 *  0.000 + cr2 *  1.793) / 1023.0;
-			rgb[10] = (y3 * 1.164 + cb2 * -0.213 + cr2 * -0.533) / 1023.0;
-			rgb[11] = (y3 * 1.164 + cb2 *  2.112 + cr2 *  0.000) / 1023.0;
+			rgb[9]  = (y3 * 1.164 + cb3 *  0.000 + cr3 *  1.793) / 1023.0;
+			rgb[10] = (y3 * 1.164 + cb3 * -0.213 + cr3 * -0.533) / 1023.0;
+			rgb[11] = (y3 * 1.164 + cb3 *  2.112 + cr3 *  0.000) / 1023.0;
 
 			rgb[12] = (y4 * 1.164 + cb4 *  0.000 + cr4 *  1.793) / 1023.0;
 			rgb[13] = (y4 * 1.164 + cb4 * -0.213 + cr4 * -0.533) / 1023.0;
 			rgb[14] = (y4 * 1.164 + cb4 *  2.112 + cr4 *  0.000) / 1023.0;
 
-			rgb[15] = (y5 * 1.164 + cb4 *  0.000 + cr4 *  1.793) / 1023.0;
-			rgb[16] = (y5 * 1.164 + cb4 * -0.213 + cr4 * -0.533) / 1023.0;
-			rgb[17] = (y5 * 1.164 + cb4 *  2.112 + cr4 *  0.000) / 1023.0;
+			rgb[15] = (y5 * 1.164 + cb5 *  0.000 + cr5 *  1.793) / 1023.0;
+			rgb[16] = (y5 * 1.164 + cb5 * -0.213 + cr5 * -0.533) / 1023.0;
+			rgb[17] = (y5 * 1.164 + cb5 *  2.112 + cr5 *  0.000) / 1023.0;
 
+			// Move to next chunk
 			v210 += 4;
 			rgb += 6 * 3;
 		}
