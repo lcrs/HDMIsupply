@@ -7,7 +7,7 @@
 #include "spigotCb.h"
 using namespace std;
 
-IDeckLinkInput *dlin;
+IDeckLinkInput *dlin = NULL;
 spigotCb cb;
 char *fb1, *fb2;
 int readyfb = 1;
@@ -43,12 +43,17 @@ void SparkMemoryTempBuffers(void) {
 unsigned int SparkInitialise(SparkInfoStruct si) {
 	IDeckLinkIterator *dli;
 	IDeckLink *dl;
+	HRESULT r;
 
 	fb1 = (char *)malloc(5120 * 1080);
 	fb2 = (char *)malloc(5120 * 1080);
 
 	dli = CreateDeckLinkIteratorInstance();
-	dli->Next(&dl);
+	r = dli->Next(&dl);
+	if(r != S_OK) {
+		sparkError("Ls_Spigot: failed to find DeckLink device!");
+		return(SPARK_MODULE);
+	}
 	dl->QueryInterface(IID_IDeckLinkInput, (void **)&dlin);
 	dlin->EnableVideoInput(bmdModeHD1080p25, bmdFormat10BitYUV, bmdVideoInputFlagDefault);
 	dlin->SetCallback(&cb);
@@ -189,7 +194,9 @@ unsigned long *SparkProcess(SparkInfoStruct si) {
 }
 
 void SparkUnInitialise(SparkInfoStruct si) {
-	dlin->StopStreams();
-	dlin->DisableVideoInput();
-	cout << "streams stopped" << endl << flush;
+	if(dlin != NULL) {
+		dlin->StopStreams();
+		dlin->DisableVideoInput();
+		cout << "streams stopped" << endl << flush;
+	}
 }
