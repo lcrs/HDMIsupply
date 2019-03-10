@@ -48,6 +48,13 @@ unsigned int SparkInitialise(SparkInfoStruct si) {
 	fb1 = (char *)malloc(5120 * 1080);
 	fb2 = (char *)malloc(5120 * 1080);
 
+	double fps = sparkFrameRate();
+	BMDDisplayMode dm = bmdModeHD1080p2398;
+	if(fps == 24.0) dm = bmdModeHD1080p24;
+	if(fps == 25.0) dm = bmdModeHD1080p25;
+	if(fps == 29.97) dm = bmdModeHD1080p2997;
+	if(fps == 30.0) dm = bmdModeHD1080p30;
+
 	dli = CreateDeckLinkIteratorInstance();
 	r = dli->Next(&dl);
 	if(r != S_OK) {
@@ -55,10 +62,10 @@ unsigned int SparkInitialise(SparkInfoStruct si) {
 		return(SPARK_MODULE);
 	}
 	dl->QueryInterface(IID_IDeckLinkInput, (void **)&dlin);
-	dlin->EnableVideoInput(bmdModeHD1080p25, bmdFormat10BitYUV, bmdVideoInputFlagDefault);
+	dlin->EnableVideoInput(dm, bmdFormat10BitYUV, bmdVideoInputFlagDefault);
 	dlin->SetCallback(&cb);
 	dlin->StartStreams();
-	cout << "streams started" << endl << flush;
+	cout << "Ls_Spigot: input started at " << fps << "fps" << endl << flush;
 
 	return(SPARK_MODULE);
 }
@@ -174,6 +181,7 @@ unsigned long *SparkProcess(SparkInfoStruct si) {
 		chroma interpolation
 		sync speed?
 		safety
+		should we output 12bit and let flame convert to half float?
 	*/
 
 	char *fbuf;
@@ -197,6 +205,6 @@ void SparkUnInitialise(SparkInfoStruct si) {
 	if(dlin != NULL) {
 		dlin->StopStreams();
 		dlin->DisableVideoInput();
-		cout << "streams stopped" << endl << flush;
+		cout << "Ls_Spigot: input stopped" << endl << flush;
 	}
 }
