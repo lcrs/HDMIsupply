@@ -7,6 +7,20 @@
 #include "spigotCb.h"
 using namespace std;
 
+/* TODO:
+		name change
+		re-entrancy
+		thread counts other than 16
+		debug toggle
+		try gcc's auto vectorise
+		output 12bit and let flame convert to half float?
+		_cvtss_sh for half float conversion
+		pixfc plus 10bit-half conversion?
+		ram record n playback
+		visual frame drop indicator
+		yuv headroom
+*/
+
 IDeckLinkInput *dlin = NULL;
 spigotCb cb;
 char *fb1, *fb2;
@@ -175,14 +189,6 @@ unsigned long *SparkProcess(SparkInfoStruct si) {
 
 	SparkMemBufStruct buf;
 	sparkBuf(1, &buf);
-	
-	/* TODO:
-		re-entrancy
-		chroma interpolation
-		sync speed?
-		safety
-		should we output 12bit and let flame convert to half float?
-	*/
 
 	char *fbuf;
 	if(readyfb == 1) {
@@ -196,7 +202,6 @@ unsigned long *SparkProcess(SparkInfoStruct si) {
 	clock_gettime(CLOCK_REALTIME, &e);
 	ms = (e.tv_nsec - s.tv_nsec) / 1000000.0;
 	cout << ms << "ms to convert buffer" << endl;
-
 
 	return buf.Buffer; // N.B. this is some bullshit, the pointer returned is rudely ignored
 }
