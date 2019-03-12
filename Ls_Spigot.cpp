@@ -66,8 +66,12 @@ unsigned int SparkInitialise(SparkInfoStruct si) {
 	BMDDisplayMode dm = bmdModeHD1080p2398;
 	if(fps == 24.0) dm = bmdModeHD1080p24;
 	if(fps == 25.0) dm = bmdModeHD1080p25;
-	if(fps == 29.97) dm = bmdModeHD1080p2997;
+	if(abs(fps - 29.97) < 0.01) dm = bmdModeHD1080p2997;
 	if(fps == 30.0) dm = bmdModeHD1080p30;
+	if(fps == 50.0) dm = bmdModeHD1080p50;
+	if(abs(fps - 59.94) < 0.01) dm = bmdModeHD1080p5994;
+	if(fps == 60.0) dm = bmdModeHD1080p6000;
+	cout << fps << endl << flush;
 
 	dli = CreateDeckLinkIteratorInstance();
 	r = dli->Next(&dl);
