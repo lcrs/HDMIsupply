@@ -4,7 +4,7 @@
 #include "spark.h"
 #include "decklink/mac/DeckLinkAPI.h"
 
-class spigotCb : public IDeckLinkInputCallback {
+class dliCb: public IDeckLinkInputCallback {
   public:
 	HRESULT	VideoInputFormatChanged(BMDVideoInputFormatChangedEvents e, IDeckLinkDisplayMode* dm, BMDDetectedVideoInputFormatFlags f);
 	HRESULT	VideoInputFrameArrived(IDeckLinkVideoInputFrame* f, IDeckLinkAudioInputPacket* a);

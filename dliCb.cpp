@@ -2,17 +2,17 @@
 // from the Decklink API
 
 #include <iostream>
-#include "spigotCb.h"
+#include "dliCb.h"
 using namespace std;
 
 extern char *fb1, *fb2;
 extern int readyfb;
 
-HRESULT spigotCb::VideoInputFormatChanged(BMDVideoInputFormatChangedEvents e, IDeckLinkDisplayMode *dm, BMDDetectedVideoInputFormatFlags f) {
+HRESULT dliCb::VideoInputFormatChanged(BMDVideoInputFormatChangedEvents e, IDeckLinkDisplayMode *dm, BMDDetectedVideoInputFormatFlags f) {
 	return 0;
 }
 
-HRESULT	spigotCb::VideoInputFrameArrived(IDeckLinkVideoInputFrame *f, IDeckLinkAudioInputPacket *a) {
+HRESULT	dliCb::VideoInputFrameArrived(IDeckLinkVideoInputFrame *f, IDeckLinkAudioInputPacket *a) {
 	void *b;
 	f->GetBytes(&b);
 
@@ -34,14 +34,14 @@ HRESULT	spigotCb::VideoInputFrameArrived(IDeckLinkVideoInputFrame *f, IDeckLinkA
 	return 0;
 }
 
-HRESULT spigotCb::QueryInterface(REFIID iid, LPVOID *ppv) {
+HRESULT dliCb::QueryInterface(REFIID iid, LPVOID *ppv) {
 	return 0;
 }
 
-ULONG spigotCb::AddRef() {
+ULONG dliCb::AddRef() {
 	return 0;
 }
 
-ULONG spigotCb::Release() {
+ULONG dliCb::Release() {
 	return 0;
 }

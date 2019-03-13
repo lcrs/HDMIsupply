@@ -13,16 +13,16 @@ ifeq ($(shell uname), Linux)
 	EXT = spark_x86_64
 endif
 
-all: Ls_Spigot.$(EXT)
+all: HDMIsupply.$(EXT)
 
-Ls_Spigot.$(EXT): Ls_Spigot.o spigotCb.o DeckLinkAPIDispatch.o Makefile
-	g++ $(LDFLAGS) Ls_Spigot.o spigotCb.o DeckLinkAPIDispatch.o -o Ls_Spigot.$(EXT)
+HDMIsupply.$(EXT): HDMIsupply.o dliCb.o DeckLinkAPIDispatch.o Makefile
+	g++ $(LDFLAGS) HDMIsupply.o dliCb.o DeckLinkAPIDispatch.o -o HDMIsupply.$(EXT)
 
-Ls_Spigot.o: Ls_Spigot.cpp *.h Makefile spark.h
-	g++ $(CFLAGS) -c Ls_Spigot.cpp
+HDMIsupply.o: HDMIsupply.cpp *.h Makefile spark.h
+	g++ $(CFLAGS) -c HDMIsupply.cpp
 
-spigotCb.o: spigotCb.cpp *.h Makefile
-	g++ $(CFLAGS) -c spigotCb.cpp
+dliCb.o: dliCb.cpp *.h Makefile
+	g++ $(CFLAGS) -c dliCb.cpp
 
 DeckLinkAPIDispatch.o: decklink/mac/DeckLinkAPIDispatch.cpp *.h Makefile
 	g++ $(CFLAGS) -c decklink/mac/DeckLinkAPIDispatch.cpp
@@ -31,4 +31,4 @@ spark.h: Makefile
 	ln -sf `ls /opt/Autodesk/presets/*/sparks/spark.h | head -n1` spark.h
 
 clean:
-	rm -f Ls_Spigot.spark Ls_Spigot.spark_x86_64 *.o spark.h
+	rm -f HDMIsupply.spark HDMIsupply.spark_x86_64 *.o spark.h

@@ -4,7 +4,7 @@
 #include "spark.h"
 #include "half.h"
 #include "decklink/mac/DeckLinkAPI.h"
-#include "spigotCb.h"
+#include "dliCb.h"
 using namespace std;
 
 /* TODO:
@@ -22,17 +22,17 @@ using namespace std;
 */
 
 IDeckLinkInput *dlin = NULL;
-spigotCb cb;
+dliCb cb;
 char *fb1, *fb2;
 int readyfb = 1;
 
 int sparkBuf(int n, SparkMemBufStruct *b) {
 	if(!sparkMemGetBuffer(n, b)) {
-		cout << "Ls_Spigot: sparkMemGetBuffer() failed: " << n << endl;
+		cout << "HDMIsupply: sparkMemGetBuffer() failed: " << n << endl;
 		return(0);
 	}
 	if(!(b->BufState & MEMBUF_LOCKED)) {
-		cout << "Ls_Spigot: buffer " << n << " not locked" << endl;
+		cout << "HDMIsupply: buffer " << n << " not locked" << endl;
 		return(0);
 	}
 	return(1);
@@ -76,14 +76,14 @@ unsigned int SparkInitialise(SparkInfoStruct si) {
 	dli = CreateDeckLinkIteratorInstance();
 	r = dli->Next(&dl);
 	if(r != S_OK) {
-		sparkError("Ls_Spigot: failed to find DeckLink device!");
+		sparkError("HDMIsupply: failed to find DeckLink device!");
 		return(SPARK_MODULE);
 	}
 	dl->QueryInterface(IID_IDeckLinkInput, (void **)&dlin);
 	dlin->EnableVideoInput(dm, bmdFormat10BitYUV, bmdVideoInputFlagDefault);
-	dlin->SetCallback(&cb);
+	dlin->SetCallback(&dliCb);
 	dlin->StartStreams();
-	cout << "Ls_Spigot: input started at " << fps << "fps" << endl << flush;
+	cout << "HDMIsupply: input started at " << fps << "fps" << endl << flush;
 
 	return(SPARK_MODULE);
 }
@@ -214,6 +214,6 @@ void SparkUnInitialise(SparkInfoStruct si) {
 	if(dlin != NULL) {
 		dlin->StopStreams();
 		dlin->DisableVideoInput();
-		cout << "Ls_Spigot: input stopped" << endl << flush;
+		cout << "HDMIsupply: input stopped" << endl << flush;
 	}
 }
