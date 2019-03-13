@@ -71,7 +71,6 @@ unsigned int SparkInitialise(SparkInfoStruct si) {
 	if(fps == 50.0) dm = bmdModeHD1080p50;
 	if(abs(fps - 59.94) < 0.01) dm = bmdModeHD1080p5994;
 	if(fps == 60.0) dm = bmdModeHD1080p6000;
-	cout << fps << endl << flush;
 
 	dli = CreateDeckLinkIteratorInstance();
 	r = dli->Next(&dl);
@@ -81,7 +80,7 @@ unsigned int SparkInitialise(SparkInfoStruct si) {
 	}
 	dl->QueryInterface(IID_IDeckLinkInput, (void **)&dlin);
 	dlin->EnableVideoInput(dm, bmdFormat10BitYUV, bmdVideoInputFlagDefault);
-	dlin->SetCallback(&dliCb);
+	dlin->SetCallback(&cb);
 	dlin->StartStreams();
 	cout << "HDMIsupply: input started at " << fps << "fps" << endl << flush;
 
