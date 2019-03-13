@@ -7,35 +7,37 @@
 #include "dliCb.h"
 using namespace std;
 
-/* TODO:
-		name change
+/*  TODO:
 		re-entrancy
-		thread counts other than 16
 		debug toggle
-		try gcc's auto vectorise
-		output 12bit and let flame convert to half float?
-		_cvtss_sh for half float conversion
-		pixfc plus 10bit-half conversion?
-		ram record n playback
 		visual frame drop indicator
 		yuv headroom
+		ram record n playback
+		could we uhhh... do this as an OFX plugin, and on the GPU?
+
+	PERF TODO:
+		_cvtss_sh for half float conversion + cpu feature detection
+		outputting 12bit and letting flame convert to half float might be faster
+		check gcc vs clang
+		pixfc's v210-to-r210 then our 10bit-to-half conversion?
 */
 
 IDeckLinkInput *dlin = NULL;
 dliCb cb;
 char *fb1, *fb2;
 int readyfb = 1;
+int threadcount, w, h, v210rowbytes;
 
 int sparkBuf(int n, SparkMemBufStruct *b) {
 	if(!sparkMemGetBuffer(n, b)) {
-		cout << "HDMIsupply: sparkMemGetBuffer() failed: " << n << endl;
-		return(0);
+		cout << "HDMIsupply: sparkMemGetBuffer() failed: " << n << endl << flush;
+		return 0;
 	}
 	if(!(b->BufState & MEMBUF_LOCKED)) {
-		cout << "HDMIsupply: buffer " << n << " not locked" << endl;
-		return(0);
+		cout << "HDMIsupply: buffer " << n << " not locked" << endl << flush;
+		return 0;
 	}
-	return(1);
+	return 1;
 }
 
 int SparkIsInputFormatSupported(SparkPixelFormat fmt) {
@@ -48,7 +50,7 @@ int SparkIsInputFormatSupported(SparkPixelFormat fmt) {
 }
 
 int SparkClips(void) {
-	return(0);
+	return 0;
 }
 
 void SparkMemoryTempBuffers(void) {
@@ -59,8 +61,21 @@ unsigned int SparkInitialise(SparkInfoStruct si) {
 	IDeckLink *dl;
 	HRESULT r;
 
-	fb1 = (char *)malloc(5120 * 1080);
-	fb2 = (char *)malloc(5120 * 1080);
+	cout << "HDMIsupply: initialising" << endl;
+
+	threadcount = si.NumProcessors;
+	cout << "HDMIsupply: using " << threadcount << " threads" << endl;
+	w = si.FrameWidth;
+	h = si.FrameHeight;
+	v210rowbytes = w * 8 / 3;
+	cout << "HDMIsupply: resolution is " << w << "x" << h << endl;
+	if(w != 1920 || h != 1080) {
+		sparkError("resolution is not 1920x1080, cannot start!");
+		return SPARK_MODULE;
+	}
+
+	fb1 = (char *)malloc(v210rowbytes * h);
+	fb2 = (char *)malloc(v210rowbytes * h);
 
 	double fps = sparkFrameRate();
 	BMDDisplayMode dm = bmdModeHD1080p2398;
@@ -75,8 +90,8 @@ unsigned int SparkInitialise(SparkInfoStruct si) {
 	dli = CreateDeckLinkIteratorInstance();
 	r = dli->Next(&dl);
 	if(r != S_OK) {
-		sparkError("HDMIsupply: failed to find DeckLink device!");
-		return(SPARK_MODULE);
+		sparkError("failed to find DeckLink device!");
+		return SPARK_MODULE;
 	}
 	dl->QueryInterface(IID_IDeckLinkInput, (void **)&dlin);
 	dlin->EnableVideoInput(dm, bmdFormat10BitYUV, bmdVideoInputFlagDefault);
@@ -84,25 +99,25 @@ unsigned int SparkInitialise(SparkInfoStruct si) {
 	dlin->StartStreams();
 	cout << "HDMIsupply: input started at " << fps << "fps" << endl << flush;
 
-	return(SPARK_MODULE);
+	return SPARK_MODULE;
 }
 
 void threadProc(char *from, SparkMemBufStruct *to) {
 	unsigned long offset, pixels;
 	sparkMpInfo(&offset, &pixels);
-	int thread = 16 * offset / (1920 * 1080);
-	int rowcount = 1080 / 16;
+	int thread = round(threadcount * (float)offset / (to->BufWidth * to->BufHeight));
+	int rowcount = to->BufHeight / threadcount;
 	int rowstart = thread * rowcount;
 
-	// 1080 rows don't divide across 16 threads
-	if(thread == 15) rowcount += 8;
+	// Last thread also gets remaining rows when height is not divisible by threadcount
+	if(thread == threadcount - 1) rowcount += to->BufHeight - (rowcount * threadcount);
 
 	for(int row = rowstart; row < rowstart + rowcount; row++) {
 		half *rgb = (half *)((char *)to->Buffer + row * to->Stride);
-		int *v210 = (int *)((from + 5120 * 1080) - (row + 1) * 5120);
+		int *v210 = (int *)((from + v210rowbytes * to->BufHeight) - (row + 1) * v210rowbytes);
 
-		for(int chunk = 0; chunk < 1920 / 6; chunk++) {
-			// Unpack 10bit YCbCr pixels from this 4:2:2 v210 format 32-byte chunk
+		for(int chunk = 0; chunk < to->BufWidth / 6; chunk++) {
+			// Unpack 6 10bit YCbCr pixels from this 4:2:2 v210 format 32-byte chunk
 			float y0 = (v210[0] >> 10) & 0x000003ff;
 			float y1 = (v210[1] >>  0) & 0x000003ff;
 			float y2 = (v210[1] >> 20) & 0x000003ff;
@@ -118,7 +133,7 @@ void threadProc(char *from, SparkMemBufStruct *to) {
 
 			// We need the next two chroma samples for interpolation
 			float cr6, cb6;
-			if(chunk == (1920 / 6) - 1) {
+			if(chunk == (to->BufWidth / 6) - 1) {
 				// ...but not if we would read beyond this row
 				cr6 = cr4;
 				cb6 = cb4;
@@ -176,7 +191,7 @@ void threadProc(char *from, SparkMemBufStruct *to) {
 			rgb[16] = (y5 * 1.164 + cb5 * -0.213 + cr5 * -0.533) / 1023.0;
 			rgb[17] = (y5 * 1.164 + cb5 *  2.112 + cr5 *  0.000) / 1023.0;
 
-			// Move to next chunk
+			// Move to next 32-byte v210 chunk
 			v210 += 4;
 			rgb += 6 * 3;
 		}
@@ -184,11 +199,17 @@ void threadProc(char *from, SparkMemBufStruct *to) {
 }
 
 unsigned long *SparkProcess(SparkInfoStruct si) {
+	if(w != 1920 || h != 1080) {
+		sparkError("resolution is not 1920x1080, cannot process!");
+		return 0;
+	}
+
 	static struct timespec s, e, last;
 	last = s;
 	clock_gettime(CLOCK_REALTIME, &s);
 	float ms = (s.tv_nsec - last.tv_nsec) / 1000000.0;
-	cout << ms << "ms since last process call   ";
+	if(ms < 0.0) ms += 1000.0;
+	cout << "HDMIsupply: " << ms << "ms since last process call   ";
 
 	SparkMemBufStruct buf;
 	sparkBuf(1, &buf);
@@ -204,12 +225,13 @@ unsigned long *SparkProcess(SparkInfoStruct si) {
 
 	clock_gettime(CLOCK_REALTIME, &e);
 	ms = (e.tv_nsec - s.tv_nsec) / 1000000.0;
-	cout << ms << "ms to convert buffer" << endl;
+	cout << ms << "ms to convert buffer" << endl << flush;
 
 	return buf.Buffer; // N.B. this is some bullshit, the pointer returned is rudely ignored
 }
 
 void SparkUnInitialise(SparkInfoStruct si) {
+	cout << "HDMIsupply: uninitialising" << endl << flush;
 	if(dlin != NULL) {
 		dlin->StopStreams();
 		dlin->DisableVideoInput();

@@ -7,6 +7,7 @@ using namespace std;
 
 extern char *fb1, *fb2;
 extern int readyfb;
+extern int w, h, v210rowbytes;
 
 HRESULT dliCb::VideoInputFormatChanged(BMDVideoInputFormatChangedEvents e, IDeckLinkDisplayMode *dm, BMDDetectedVideoInputFormatFlags f) {
 	return 0;
@@ -23,7 +24,7 @@ HRESULT	dliCb::VideoInputFrameArrived(IDeckLinkVideoInputFrame *f, IDeckLinkAudi
 		fbuf = fb1;
 	}
 
-	memcpy(fbuf, b, 5120 * 1080);
+	memcpy(fbuf, b, v210rowbytes * h);
 
 	if(readyfb == 1) {
 		readyfb = 2;
