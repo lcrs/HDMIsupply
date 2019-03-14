@@ -14,6 +14,7 @@ using namespace std;
 		yuv headroom
 		ram record n playback
 		could we uhhh... do this as an OFX plugin, and on the GPU?
+		note in readme that building on macos requires older xcode
 
 	PERF TODO:
 		_cvtss_sh for half float conversion + cpu feature detection
@@ -105,18 +106,18 @@ unsigned int SparkInitialise(SparkInfoStruct si) {
 void threadProc(char *from, SparkMemBufStruct *to) {
 	unsigned long offset, pixels;
 	sparkMpInfo(&offset, &pixels);
-	int thread = round(threadcount * (float)offset / (to->BufWidth * to->BufHeight));
-	int rowcount = to->BufHeight / threadcount;
+	int thread = round(threadcount * (float)offset / (w * h));
+	int rowcount = h / threadcount;
 	int rowstart = thread * rowcount;
 
 	// Last thread also gets remaining rows when height is not divisible by threadcount
-	if(thread == threadcount - 1) rowcount += to->BufHeight - (rowcount * threadcount);
+	if(thread == threadcount - 1) rowcount += h - (rowcount * threadcount);
 
 	for(int row = rowstart; row < rowstart + rowcount; row++) {
 		half *rgb = (half *)((char *)to->Buffer + row * to->Stride);
-		int *v210 = (int *)((from + v210rowbytes * to->BufHeight) - (row + 1) * v210rowbytes);
+		int *v210 = (int *)((from + v210rowbytes * h) - (row + 1) * v210rowbytes);
 
-		for(int chunk = 0; chunk < to->BufWidth / 6; chunk++) {
+		for(int chunk = 0; chunk < w / 6; chunk++) {
 			// Unpack 6 10bit YCbCr pixels from this 4:2:2 v210 format 32-byte chunk
 			float y0 = (v210[0] >> 10) & 0x000003ff;
 			float y1 = (v210[1] >>  0) & 0x000003ff;
@@ -133,7 +134,7 @@ void threadProc(char *from, SparkMemBufStruct *to) {
 
 			// We need the next two chroma samples for interpolation
 			float cr6, cb6;
-			if(chunk == (to->BufWidth / 6) - 1) {
+			if(chunk == (w / 6) - 1) {
 				// ...but not if we would read beyond this row
 				cr6 = cr4;
 				cb6 = cb4;
