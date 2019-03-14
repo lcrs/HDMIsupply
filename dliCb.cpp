@@ -5,8 +5,7 @@
 #include "dliCb.h"
 using namespace std;
 
-extern char *fb1, *fb2;
-extern int readyfb;
+extern char *frontbuf, *backbuf;
 extern int w, h, v210rowbytes;
 
 HRESULT dliCb::VideoInputFormatChanged(BMDVideoInputFormatChangedEvents e, IDeckLinkDisplayMode *dm, BMDDetectedVideoInputFormatFlags f) {
@@ -17,20 +16,12 @@ HRESULT	dliCb::VideoInputFrameArrived(IDeckLinkVideoInputFrame *f, IDeckLinkAudi
 	void *b;
 	f->GetBytes(&b);
 
-	char *fbuf;
-	if(readyfb == 1) {
-		fbuf = fb2;
-	} else {
-		fbuf = fb1;
-	}
+	memcpy(backbuf, b, v210rowbytes * h);
 
-	memcpy(fbuf, b, v210rowbytes * h);
-
-	if(readyfb == 1) {
-		readyfb = 2;
-	} else {
-		readyfb = 1;
-	}
+	char *t;
+	t = frontbuf;
+	frontbuf = backbuf;
+	backbuf = t;
 
 	return 0;
 }

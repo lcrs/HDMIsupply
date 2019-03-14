@@ -1,6 +1,10 @@
 #include <iostream>
+#include <sstream>
 #include <sys/time.h>
 #include <unistd.h>
+#include <sys/errno.h>
+#include <sys/mman.h>
+#include <fcntl.h>
 #include "spark.h"
 #include "half.h"
 #include "decklink/mac/DeckLinkAPI.h"
@@ -25,9 +29,9 @@ using namespace std;
 
 IDeckLinkInput *dlin = NULL;
 dliCb cb;
-char *fb1, *fb2;
-int readyfb = 1;
+char *frontbuf, *backbuf;
 int threadcount, w, h, v210rowbytes;
+void *cbctrl;
 
 int sparkBuf(int n, SparkMemBufStruct *b) {
 	if(!sparkMemGetBuffer(n, b)) {
@@ -57,11 +61,45 @@ int SparkClips(void) {
 void SparkMemoryTempBuffers(void) {
 }
 
-unsigned int SparkInitialise(SparkInfoStruct si) {
-	IDeckLinkIterator *dli;
-	IDeckLink *dl;
-	HRESULT r;
+void startAnew(void) {
+	cout << "HDMIsupply: starting new instance" << endl;
+	frontbuf = (char *)malloc(v210rowbytes * h);
+	backbuf = (char *)malloc(v210rowbytes * h);
 
+	double fps = sparkFrameRate();
+	BMDDisplayMode dm = bmdModeHD1080p2398;
+	if(fps == 24.0) dm = bmdModeHD1080p24;
+	if(fps == 25.0) dm = bmdModeHD1080p25;
+	if(abs(fps - 29.97) < 0.01) dm = bmdModeHD1080p2997;
+	if(fps == 30.0) dm = bmdModeHD1080p30;
+	if(fps == 50.0) dm = bmdModeHD1080p50;
+	if(abs(fps - 59.94) < 0.01) dm = bmdModeHD1080p5994;
+	if(fps == 60.0) dm = bmdModeHD1080p6000;
+
+	IDeckLink *dl;
+	IDeckLinkIterator *dli = CreateDeckLinkIteratorInstance();
+	HRESULT r;
+	r = dli->Next(&dl);
+	if(r != S_OK) {
+		sparkError("failed to find DeckLink device!");
+		return;
+	}
+	dl->QueryInterface(IID_IDeckLinkInput, (void **)&dlin);
+	r = dlin->EnableVideoInput(dm, bmdFormat10BitYUV, bmdVideoInputFlagDefault);
+	if(r != S_OK) {
+		sparkError("failed to enable DeckLink video input!");
+		return;
+	}
+	dlin->SetCallback(&cb);
+	r = dlin->StartStreams();
+	if(r != S_OK) {
+		sparkError("failed to start DeckLink streams!");
+		return;
+	}
+	cout << "HDMIsupply: input started at " << fps << "fps" << endl << flush;
+}
+
+unsigned int SparkInitialise(SparkInfoStruct si) {
 	cout << "HDMIsupply: initialising" << endl;
 
 	threadcount = si.NumProcessors;
@@ -75,30 +113,24 @@ unsigned int SparkInitialise(SparkInfoStruct si) {
 		return SPARK_MODULE;
 	}
 
-	fb1 = (char *)malloc(v210rowbytes * h);
-	fb2 = (char *)malloc(v210rowbytes * h);
-
-	double fps = sparkFrameRate();
-	BMDDisplayMode dm = bmdModeHD1080p2398;
-	if(fps == 24.0) dm = bmdModeHD1080p24;
-	if(fps == 25.0) dm = bmdModeHD1080p25;
-	if(abs(fps - 29.97) < 0.01) dm = bmdModeHD1080p2997;
-	if(fps == 30.0) dm = bmdModeHD1080p30;
-	if(fps == 50.0) dm = bmdModeHD1080p50;
-	if(abs(fps - 59.94) < 0.01) dm = bmdModeHD1080p5994;
-	if(fps == 60.0) dm = bmdModeHD1080p6000;
-
-	dli = CreateDeckLinkIteratorInstance();
-	r = dli->Next(&dl);
-	if(r != S_OK) {
-		sparkError("failed to find DeckLink device!");
-		return SPARK_MODULE;
+	// Check for existing instance
+	ostringstream s;
+	s << "HDMIsupply" << getpid();
+	int shmfd = shm_open(s.str().c_str(), O_RDONLY, 0700);
+	if(shmfd == -1) {
+		cout << "HDMIsupply: shm_open() failed: " << errno << endl;
+		startAnew();
 	}
-	dl->QueryInterface(IID_IDeckLinkInput, (void **)&dlin);
-	dlin->EnableVideoInput(dm, bmdFormat10BitYUV, bmdVideoInputFlagDefault);
-	dlin->SetCallback(&cb);
-	dlin->StartStreams();
-	cout << "HDMIsupply: input started at " << fps << "fps" << endl << flush;
+	void *shmptr = mmap(0, 8, PROT_READ, MAP_SHARED, shmfd, 0);
+	if(shmptr == MAP_FAILED) {
+		cout << "HDMIsupply: SHM mmap() failed: " << errno << endl;
+		shmptr = NULL;
+	}
+	close(shmfd);
+	if(shmptr) {
+		// Use buffers of existing instance
+		cbctrl = *(void **)shmptr;
+	}
 
 	return SPARK_MODULE;
 }
@@ -215,14 +247,7 @@ unsigned long *SparkProcess(SparkInfoStruct si) {
 	SparkMemBufStruct buf;
 	sparkBuf(1, &buf);
 
-	char *fbuf;
-	if(readyfb == 1) {
-		fbuf = fb1;
-	} else {
-		fbuf = fb2;
-	}
-
-	sparkMpFork((void(*)())threadProc, 2, fbuf, &buf);
+	sparkMpFork((void(*)())threadProc, 2, frontbuf, &buf);
 
 	clock_gettime(CLOCK_REALTIME, &e);
 	ms = (e.tv_nsec - s.tv_nsec) / 1000000.0;
@@ -236,6 +261,6 @@ void SparkUnInitialise(SparkInfoStruct si) {
 	if(dlin != NULL) {
 		dlin->StopStreams();
 		dlin->DisableVideoInput();
-		cout << "HDMIsupply: input stopped" << endl << flush;
+		cout << "HDMIsupply: streams stopped and input disabled" << endl << flush;
 	}
 }
