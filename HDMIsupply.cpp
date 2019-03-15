@@ -19,12 +19,14 @@ using namespace std;
 		ram record n playback
 		could we uhhh... do this as an OFX plugin, and on the GPU?
 		note in readme that building on macos requires older xcode
+		note in readme referring to robert hodgkin's code apologia
 
 	PERF TODO:
 		_cvtss_sh for half float conversion + cpu feature detection
 		outputting 12bit and letting flame convert to half float might be faster
 		check gcc vs clang
 		pixfc's v210-to-r210 then our 10bit-to-half conversion?
+		increase the ref count of the IDeckLinkVideoInputFrame instead of memcpy()?
 */
 
 IDeckLinkInput *dlin = NULL;
@@ -118,12 +120,12 @@ unsigned int SparkInitialise(SparkInfoStruct si) {
 	s << "HDMIsupply" << getpid();
 	int shmfd = shm_open(s.str().c_str(), O_RDONLY, 0700);
 	if(shmfd == -1) {
-		cout << "HDMIsupply: shm_open() failed: " << errno << endl;
+		cout << "HDMIsupply: shm_open() returned " << errno << endl;
 		startAnew();
 	}
 	void *shmptr = mmap(0, 8, PROT_READ, MAP_SHARED, shmfd, 0);
 	if(shmptr == MAP_FAILED) {
-		cout << "HDMIsupply: SHM mmap() failed: " << errno << endl;
+		cout << "HDMIsupply: shm mmap() returned " << errno << endl;
 		shmptr = NULL;
 	}
 	close(shmfd);
