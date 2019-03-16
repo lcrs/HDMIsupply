@@ -4,6 +4,10 @@
 #include "spark.h"
 #include "decklink/mac/DeckLinkAPI.h"
 
+struct cbctrl_t {
+	char *frontbuf, *backbuf;
+};
+
 class dliCb: public IDeckLinkInputCallback {
   public:
 	HRESULT	VideoInputFormatChanged(BMDVideoInputFormatChangedEvents e, IDeckLinkDisplayMode* dm, BMDDetectedVideoInputFormatFlags f);

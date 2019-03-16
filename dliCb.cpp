@@ -5,7 +5,7 @@
 #include "dliCb.h"
 using namespace std;
 
-extern char *frontbuf, *backbuf;
+extern cbctrl_t *cbctrl;
 extern int w, h, v210rowbytes;
 
 HRESULT dliCb::VideoInputFormatChanged(BMDVideoInputFormatChangedEvents e, IDeckLinkDisplayMode *dm, BMDDetectedVideoInputFormatFlags f) {
@@ -16,12 +16,14 @@ HRESULT	dliCb::VideoInputFrameArrived(IDeckLinkVideoInputFrame *f, IDeckLinkAudi
 	void *b;
 	f->GetBytes(&b);
 
-	memcpy(backbuf, b, v210rowbytes * h);
+	// Copy DeckLink-provided buffer to our own
+	memcpy(cbctrl->backbuf, b, v210rowbytes * h);
 
+	// Set this new buffer as the "front" one to be picked up by the main thread
 	char *t;
-	t = frontbuf;
-	frontbuf = backbuf;
-	backbuf = t;
+	t = cbctrl->frontbuf;
+	cbctrl->frontbuf = cbctrl->backbuf;
+	cbctrl->backbuf = t;
 
 	return 0;
 }

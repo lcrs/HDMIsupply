@@ -31,9 +31,8 @@ using namespace std;
 
 IDeckLinkInput *dlin = NULL;
 dliCb cb;
-char *frontbuf, *backbuf;
 int threadcount, w, h, v210rowbytes;
-void *cbctrl;
+struct cbctrl_t *cbctrl;
 
 int sparkBuf(int n, SparkMemBufStruct *b) {
 	if(!sparkMemGetBuffer(n, b)) {
@@ -64,10 +63,29 @@ void SparkMemoryTempBuffers(void) {
 }
 
 void startAnew(void) {
+	// Create new control struct and buffers
 	cout << "HDMIsupply: starting new instance" << endl;
-	frontbuf = (char *)malloc(v210rowbytes * h);
-	backbuf = (char *)malloc(v210rowbytes * h);
+	cbctrl = (cbctrl_t *)malloc(sizeof(cbctrl_t));
+	cbctrl->frontbuf = (char *)malloc(v210rowbytes * h);
+	cbctrl->backbuf = (char *)malloc(v210rowbytes * h);
 
+	// Share pointer to control struct for future instances to pick up
+	ostringstream s;
+	s << "HDMIsupply" << getpid();
+	int shmfd = shm_open(s.str().c_str(), O_CREAT | O_RDWR, 0700);
+	if(shmfd == -1) {
+		cout << "HDMIsupply: new instance shm_open() returned " << errno << endl;
+	}
+	ftruncate(shmfd, sizeof(cbctrl_t *));
+	void *shmptr = mmap(0, 8, PROT_READ | PROT_WRITE, MAP_SHARED, shmfd, 0);
+	if(shmptr == MAP_FAILED) {
+		cout << "HDMIsupply: new instance shm mmap() returned " << errno << endl;
+		shmptr = NULL;
+		return;
+	}
+	*(cbctrl_t **)shmptr = cbctrl;
+
+	// Set up DeckLink device and start its streams
 	double fps = sparkFrameRate();
 	BMDDisplayMode dm = bmdModeHD1080p2398;
 	if(fps == 24.0) dm = bmdModeHD1080p24;
@@ -120,19 +138,22 @@ unsigned int SparkInitialise(SparkInfoStruct si) {
 	s << "HDMIsupply" << getpid();
 	int shmfd = shm_open(s.str().c_str(), O_RDONLY, 0700);
 	if(shmfd == -1) {
-		cout << "HDMIsupply: shm_open() returned " << errno << endl;
+		cout << "HDMIsupply: shm_open() returned " << errno << ", no instance found" << endl;
 		startAnew();
-	}
-	void *shmptr = mmap(0, 8, PROT_READ, MAP_SHARED, shmfd, 0);
-	if(shmptr == MAP_FAILED) {
-		cout << "HDMIsupply: shm mmap() returned " << errno << endl;
-		shmptr = NULL;
+	} else {
+		cout << "HDMIsupply: found existing instance" << endl;
+		void *shmptr = mmap(0, 8, PROT_READ, MAP_SHARED, shmfd, 0);
+		if(shmptr == MAP_FAILED) {
+			cout << "HDMIsupply: shm mmap() returned " << errno << endl;
+			shmptr = NULL;
+		}
+		if(shmptr) {
+			// Use buffers of existing instance
+			cbctrl = *(cbctrl_t **)shmptr;
+			cout << "HDMIsupply: found pointer to control struct at " << cbctrl << endl;
+		}
 	}
 	close(shmfd);
-	if(shmptr) {
-		// Use buffers of existing instance
-		cbctrl = *(void **)shmptr;
-	}
 
 	return SPARK_MODULE;
 }
@@ -249,7 +270,7 @@ unsigned long *SparkProcess(SparkInfoStruct si) {
 	SparkMemBufStruct buf;
 	sparkBuf(1, &buf);
 
-	sparkMpFork((void(*)())threadProc, 2, frontbuf, &buf);
+	sparkMpFork((void(*)())threadProc, 2, cbctrl->frontbuf, &buf);
 
 	clock_gettime(CLOCK_REALTIME, &e);
 	ms = (e.tv_nsec - s.tv_nsec) / 1000000.0;
