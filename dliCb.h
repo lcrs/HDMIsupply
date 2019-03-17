@@ -6,6 +6,7 @@
 
 struct cbctrl_t {
 	char *frontbuf, *backbuf;
+	bool streaming;
 };
 
 class dliCb: public IDeckLinkInputCallback {
