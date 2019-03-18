@@ -12,7 +12,9 @@
 using namespace std;
 
 /*  TODO:
-		funny business when called in low res for reels thumbnail...
+		we must never: unlink shm file if we failed to start streams - another instance probably exists
+		first processed frame usually black because callback thread hasn't run yet
+		at least one call to free() would be polite
 		debug toggle
 		visual frame drop indicator
 		yuv headroom
@@ -22,7 +24,7 @@ using namespace std;
 		note in readme referring to robert hodgkin's code apologia
 
 	PERF TODO:
-		_cvtss_sh for half float conversion + cpu feature detection
+		_cvtss_sh for half float conversion (w/cpu feature detection)
 		outputting 12bit and letting flame convert to half float might be faster
 		check gcc vs clang
 		pixfc's v210-to-r210 then our 10bit-to-half conversion?
@@ -32,7 +34,7 @@ using namespace std;
 IDeckLinkInput *dlin = NULL;
 dliCb cb;
 int threadcount, w, h, v210rowbytes;
-struct cbctrl_t *cbctrl;
+struct cbctrl_t *cbctrl = NULL;
 const char *shmfile = NULL;
 
 int sparkBuf(int n, SparkMemBufStruct *b) {
@@ -56,14 +58,21 @@ int SparkIsInputFormatSupported(SparkPixelFormat fmt) {
 	}
 }
 
-int SparkClips(void) {
-	return 0;
+void stopHDMI(void) {
+	cout << "HDMIsupply: stopping streams..." << endl;
+	if(cbctrl != NULL) cbctrl->streaming = false;
+	if(dlin != NULL) {
+		dlin->StopStreams();
+		dlin->DisableVideoInput();
+		cout << "HDMIsupply: streams stopped and input disabled" << endl;
+	}
+	if(shmfile != NULL) {
+		shm_unlink(shmfile);
+		cout << "HDMIsupply: shm file removed" << endl;
+	}
 }
 
-void SparkMemoryTempBuffers(void) {
-}
-
-void startAnew(void) {
+void startHDMI(void) {
 	// Create new control struct and buffers
 	cout << "HDMIsupply: starting new instance" << endl;
 	cbctrl = (cbctrl_t *)malloc(sizeof(cbctrl_t));
@@ -103,35 +112,25 @@ void startAnew(void) {
 	r = dli->Next(&dl);
 	if(r != S_OK) {
 		sparkError("failed to find DeckLink device!");
+		stopHDMI();
 		return;
 	}
 	dl->QueryInterface(IID_IDeckLinkInput, (void **)&dlin);
 	r = dlin->EnableVideoInput(dm, bmdFormat10BitYUV, bmdVideoInputFlagDefault);
 	if(r != S_OK) {
 		sparkError("failed to enable DeckLink video input!");
+		stopHDMI();
 		return;
 	}
 	dlin->SetCallback(&cb);
 	r = dlin->StartStreams();
 	if(r != S_OK) {
 		sparkError("failed to start DeckLink streams!");
+		stopHDMI();
 		return;
 	}
 	cbctrl->streaming = true;
 	cout << "HDMIsupply: input started at " << fps << "fps" << endl;
-}
-
-void stopIt(void) {
-	if(dlin != NULL) {
-		dlin->StopStreams();
-		dlin->DisableVideoInput();
-		cbctrl->streaming = false;
-		cout << "HDMIsupply: streams stopped and input disabled" << endl;
-	}
-	if(shmfile != NULL) {
-		shm_unlink(shmfile);
-		cout << "HDMIsupply: shm file removed" << endl;
-	}
 }
 
 unsigned int SparkInitialise(SparkInfoStruct si) {
@@ -156,7 +155,7 @@ unsigned int SparkInitialise(SparkInfoStruct si) {
 	int shmfd = shm_open(shmfile, O_RDONLY, 0700);
 	if(shmfd == -1) {
 		cout << "HDMIsupply: shm_open() returned " << errno << ", no instance found" << endl;
-		startAnew();
+		startHDMI();
 	} else {
 		cout << "HDMIsupply: found existing instance" << endl;
 		void *shmptr = mmap(0, 8, PROT_READ, MAP_SHARED, shmfd, 0);
@@ -272,21 +271,22 @@ void threadProc(char *from, SparkMemBufStruct *to) {
 }
 
 unsigned long *SparkProcess(SparkInfoStruct si) {
-	if(!cbctrl->streaming) {
-		cout << "HDMIsupply: streams have stopped, starting again..." << endl;
-		startAnew();
-	}
-
 	if(w != 1920 || h != 1080) {
 		sparkError("resolution is not 1920x1080, cannot process!");
+		stopHDMI();
 		return 0;
+	}
+
+	if(!cbctrl->streaming) {
+		cout << "HDMIsupply: streams have stopped, starting again..." << endl;
+		startHDMI();
 	}
 
 	static struct timespec s, e, last;
 	last = s;
 	clock_gettime(CLOCK_REALTIME, &s);
 	float ms = (s.tv_nsec - last.tv_nsec) / 1000000.0;
-	while(ms < 0.0) ms += 1000.0;
+	if(ms < 0.0) ms += 1000.0;
 	cout << "HDMIsupply: " << ms << "ms since last process call   ";
 
 	SparkMemBufStruct buf;
@@ -295,6 +295,7 @@ unsigned long *SparkProcess(SparkInfoStruct si) {
 
 	clock_gettime(CLOCK_REALTIME, &e);
 	ms = (e.tv_nsec - s.tv_nsec) / 1000000.0;
+	if(ms < 0.0) ms += 1000.0;
 	cout << ms << "ms to convert buffer" << endl;
 
 	return buf.Buffer; // N.B. this is some bullshit, the pointer returned is rudely ignored
@@ -302,5 +303,12 @@ unsigned long *SparkProcess(SparkInfoStruct si) {
 
 void SparkUnInitialise(SparkInfoStruct si) {
 	cout << "HDMIsupply: uninitialising" << endl;
-	stopIt();
+	stopHDMI();
+}
+
+int SparkClips(void) {
+	return 0;
+}
+
+void SparkMemoryTempBuffers(void) {
 }
