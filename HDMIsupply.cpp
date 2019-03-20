@@ -9,12 +9,12 @@
 #include "half.h"
 #include "decklink/mac/DeckLinkAPI.h"
 #include "dliCb.h"
+#include <initializer_list>
 using namespace std;
 
 /*  TODO:
 		first processed frame usually black because callback thread hasn't run yet
 		at least one call to free() would be polite
-		debug toggle
 		visual frame drop indicator
 		yuv headroom
 		ram record n playback
@@ -23,7 +23,7 @@ using namespace std;
 		note in readme referring to robert hodgkin's code apologia
 
 	PERF TODO:
-		_cvtss_sh for half float conversion (w/cpu feature detection)
+		_cvtss_sh for half float conversion
 		outputting 12bit and letting flame convert to half float might be faster
 		check gcc vs clang
 		pixfc's v210-to-r210 then our 10bit-to-half conversion?
@@ -34,7 +34,31 @@ IDeckLinkInput *dlin = NULL;
 dliCb cb;
 int threadcount, w, h, v210rowbytes;
 struct cbctrl_t *cbctrl = NULL;
-const char *shmfile = NULL;
+char *shmfile = NULL;
+bool debuglog = false;
+bool avx = false;
+
+void say(initializer_list<string> v) {
+	if(!debuglog) return;
+	cout << "HDMIsupply: ";
+	initializer_list<string>::iterator i;
+	for(i = v.begin(); i != v.end(); i++) {
+		cout << *i;
+	}
+	cout << endl;
+}
+
+void err(initializer_list<string> v) {
+	ostringstream s;
+	s << "HDMIsupply: ";
+	initializer_list<string>::iterator i;
+	for(i = v.begin(); i != v.end(); i++) {
+		s << *i;
+	}
+	s << endl;
+	cout << s.str();
+	sparkError(s.str().c_str());
+}
 
 int sparkBuf(int n, SparkMemBufStruct *b) {
 	if(!sparkMemGetBuffer(n, b)) {
@@ -122,6 +146,7 @@ void threadProc(char *from, SparkMemBufStruct *to) {
 			float cb5 = (cb4 + cb6) * 0.5;
 
 			// Apply Rec709 YCbCr to RGB matrix
+			// Could use: unsigned short _cvtss_sh(float x, int imm)
 			rgb[0] = (y0 * 1.164 + cb0 *  0.000 + cr0 *  1.793) / 1023.0;
 			rgb[1] = (y0 * 1.164 + cb0 * -0.213 + cr0 * -0.533) / 1023.0;
 			rgb[2] = (y0 * 1.164 + cb0 *  2.112 + cr0 *  0.000) / 1023.0;
@@ -154,23 +179,23 @@ void threadProc(char *from, SparkMemBufStruct *to) {
 }
 
 void stopHDMI(void) {
-	cout << "HDMIsupply: stopping streams..." << endl;
+	say({"stopping streams..."});
 	if(cbctrl != NULL) cbctrl->streaming = false;
 	if(dlin != NULL) {
 		dlin->StopStreams();
 		dlin->DisableVideoInput();
-		cout << "HDMIsupply: streams stopped and input disabled" << endl;
+		say({"streams stopped and input disabled"});
 		if(shmfile != NULL) {
 			shm_unlink(shmfile);
 			shmfile = NULL;
-			cout << "HDMIsupply: shm file removed" << endl;
+			say({"shm file removed"});
 		}
 	}
 }
 
 void startHDMI(void) {
 	// Create new control struct and buffers
-	cout << "HDMIsupply: starting new instance" << endl;
+	say({"starting new instance"});
 	cbctrl = (cbctrl_t *)malloc(sizeof(cbctrl_t));
 	cbctrl->frontbuf = (char *)malloc(v210rowbytes * h);
 	cbctrl->backbuf = (char *)malloc(v210rowbytes * h);
@@ -179,12 +204,12 @@ void startHDMI(void) {
 	// Share pointer to control struct for future instances to pick up
 	int shmfd = shm_open(shmfile, O_CREAT | O_RDWR, 0700);
 	if(shmfd == -1) {
-		cout << "HDMIsupply: new instance shm_open() returned " << strerror(errno) << endl;
+		say({"new instance shm_open() returned: ", strerror(errno)});
 	}
 	ftruncate(shmfd, sizeof(cbctrl_t *));
 	void *shmptr = mmap(0, 8, PROT_READ | PROT_WRITE, MAP_SHARED, shmfd, 0);
 	if(shmptr == MAP_FAILED) {
-		cout << "HDMIsupply: new instance shm mmap() returned " << strerror(errno) << endl;
+		say({"new instance shm mmap() returned: ", strerror(errno)});
 		shmptr = NULL;
 		return;
 	}
@@ -207,42 +232,42 @@ void startHDMI(void) {
 	HRESULT r;
 	r = dli->Next(&dl);
 	if(r != S_OK) {
-		sparkError("failed to find DeckLink device!");
-		cout << "HDMIsupply: failed to find DeckLink device!" << endl;
+		err({"failed to find DeckLink device!"});
 		stopHDMI();
 		return;
 	}
 	dl->QueryInterface(IID_IDeckLinkInput, (void **)&dlin);
 	r = dlin->EnableVideoInput(dm, bmdFormat10BitYUV, bmdVideoInputFlagDefault);
 	if(r != S_OK) {
-		sparkError("failed to enable DeckLink video input!");
-		cout << "HDMIsupply: failed to enable DeckLink video input!" << endl;
+		err({"failed to enable DeckLink video input!"});
 		stopHDMI();
 		return;
 	}
 	dlin->SetCallback(&cb);
 	r = dlin->StartStreams();
 	if(r != S_OK) {
-		sparkError("failed to start DeckLink streams!");
-		cout << "HDMIsupply: failed to start DeckLink streams!" << endl;
+		err({"failed to start DeckLink streams!"});
 		stopHDMI();
 		return;
 	}
 	cbctrl->streaming = true;
-	cout << "HDMIsupply: input started at " << fps << "fps" << endl;
+	say({"input started at ", to_string(fps), "fps"});
 }
 
 unsigned int SparkInitialise(SparkInfoStruct si) {
-	cout << "HDMIsupply: initialising" << endl;
+	if(getenv("HDMISUPPLY_DEBUG")) debuglog = true;
+	say({"initialising"});
 
 	threadcount = si.NumProcessors;
-	cout << "HDMIsupply: using " << threadcount << " threads" << endl;
+	say({"using ", to_string(threadcount), " threads"});
+	avx = __builtin_cpu_supports("avx");
+	if(avx) say({"CPU supports AVX"});
+
 	w = si.FrameWidth;
 	h = si.FrameHeight;
-	cout << "HDMIsupply: resolution is " << w << "x" << h << endl;
+	say({"resolution is ",  to_string(w), "x", to_string(h)});
 	if(w != 1920 || h != 1080) {
-		sparkError("resolution is not 1920x1080, cannot start!");
-		cout << "HDMIsupply: resolution is not 1920x1080, cannot start!" << endl;
+		err({"resolution is not 1920x1080, cannot start!"});
 		return SPARK_MODULE;
 	}
 	v210rowbytes = w * 8 / 3;
@@ -251,22 +276,22 @@ unsigned int SparkInitialise(SparkInfoStruct si) {
 	ostringstream s;
 	s << "HDMIsupply" << getpid();
 	shmfile = strdup(s.str().c_str());
-	cout << "HDMIsupply: using shm file " << shmfile << endl;
+	say({"using shm file ", shmfile});
 	int shmfd = shm_open(shmfile, O_RDONLY, 0700);
 	if(shmfd == -1) {
-		cout << "HDMIsupply: shm_open() returned " << strerror(errno) << ", no instance found" << endl;
+		say({"shm_open() returned ", strerror(errno), ", no instance found"});
 		startHDMI();
 	} else {
-		cout << "HDMIsupply: found existing instance" << endl;
+		say({"found existing instance"});
 		void *shmptr = mmap(0, 8, PROT_READ, MAP_SHARED, shmfd, 0);
 		if(shmptr == MAP_FAILED) {
-			cout << "HDMIsupply: shm mmap() returned " << strerror(errno) << endl;
+			say({"shm mmap() returned ", strerror(errno)});
 			shmptr = NULL;
 		}
 		if(shmptr) {
 			// Use buffers of existing instance
 			cbctrl = *(cbctrl_t **)shmptr;
-			cout << "HDMIsupply: found pointer to control struct at " << cbctrl << endl;
+			say({"found pointer to control struct at ", to_string((long)cbctrl)});
 		}
 	}
 	close(shmfd);
@@ -276,31 +301,29 @@ unsigned int SparkInitialise(SparkInfoStruct si) {
 
 unsigned long *SparkProcess(SparkInfoStruct si) {
 	if(w != 1920 || h != 1080) {
-		sparkError("resolution is not 1920x1080, cannot process!");
-		cout << "HDMIsupply: resolution is not 1920x1080, cannot process!" << endl;
+		err({"resolution is not 1920x1080, cannot process!"});
 		return 0;
 	}
 
 	if(!cbctrl->streaming) {
-		cout << "HDMIsupply: streams have stopped, starting again..." << endl;
+		say({"streams have stopped, starting again..."});
 		SparkInitialise(si);
 	}
 
 	static struct timespec s, e, last;
 	last = s;
 	clock_gettime(CLOCK_REALTIME, &s);
-	float ms = (s.tv_nsec - last.tv_nsec) / 1000000.0;
-	if(ms < 0.0) ms += 1000.0;
-	//cout << "HDMIsupply: " << ms << "ms since last process call   ";
+	float msp = (s.tv_nsec - last.tv_nsec) / 1000000.0;
+	if(msp < 0.0) msp += 1000.0;
 
 	SparkMemBufStruct buf;
 	sparkBuf(1, &buf);
 	sparkMpFork((void(*)())threadProc, 2, cbctrl->frontbuf, &buf);
 
 	clock_gettime(CLOCK_REALTIME, &e);
-	ms = (e.tv_nsec - s.tv_nsec) / 1000000.0;
-	if(ms < 0.0) ms += 1000.0;
-	//cout << ms << "ms to convert buffer" << endl;
+	float msc = (e.tv_nsec - s.tv_nsec) / 1000000.0;
+	if(msc < 0.0) msc += 1000.0;
+	say({to_string(msp), "ms since last call ", to_string(msc), "ms to convert buffer"});
 
 	return buf.Buffer; // N.B. this is some bullshit, the pointer returned is rudely ignored
 }

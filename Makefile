@@ -1,5 +1,5 @@
 # Remember some people do still have Core2Duos or whatever...
-CFLAGS = -march=native -mtune=native -fPIC -DDL_LITTLE_ENDIAN -O3
+CFLAGS = -std=c++11 -march=native -mtune=native -fPIC -DDL_LITTLE_ENDIAN -O3 -Wno-deprecated-register
 LDFLAGS = -fPIC
 
 ifeq ($(shell uname), Darwin)
