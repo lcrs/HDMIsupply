@@ -7,6 +7,7 @@
 #include <sys/mman.h>
 #include <fcntl.h>
 #include <emmintrin.h>
+#include <cpuid.h>
 #include "spark.h"
 #include "half.h"
 #include "decklink/mac/DeckLinkAPI.h"
@@ -20,11 +21,11 @@ using namespace std;
 		yuv headroom
 		ram record n playback
 		could we uhhh... do this as an OFX plugin, and on the GPU?
+		technically the F16C 
 		note in readme that building on macos requires older xcode
 		note in readme referring to robert hodgkin's code apologia
 
 	PERF TODO:
-		_cvtss_sh for half float conversion
 		outputting 12bit and letting flame convert to half float might be faster
 		check gcc vs clang
 		pixfc's v210-to-r210 then our 10bit-to-half conversion?
@@ -37,7 +38,7 @@ int threadcount, w, h, v210rowbytes;
 struct cbctrl_t *cbctrl = NULL;
 char *shmfile = NULL;
 bool debuglog = false;
-bool avx = false;
+bool f16support = false;
 
 void say(initializer_list<string> v) {
 	if(!debuglog) return;
@@ -82,7 +83,7 @@ int SparkIsInputFormatSupported(SparkPixelFormat fmt) {
 	}
 }
 
-void threadProc(char *from, SparkMemBufStruct *to) {
+void threadProcF16C(char *from, SparkMemBufStruct *to) {
 	unsigned long offset, pixels;
 	sparkMpInfo(&offset, &pixels);
 	int thread = round(threadcount * (float)offset / (w * h));
@@ -147,7 +148,6 @@ void threadProc(char *from, SparkMemBufStruct *to) {
 			float cb5 = (cb4 + cb6) * 0.5f;
 
 			// Apply Rec709 YCbCr to RGB matrix
-			// Could use: unsigned short _cvtss_sh(float x, int imm)
 			rgb[0] = _cvtss_sh((y0 * 1.164f + cb0 *  0.000f + cr0 *  1.793f) / 1023.0f, 0);
 			rgb[1] = _cvtss_sh((y0 * 1.164f + cb0 * -0.213f + cr0 * -0.533f) / 1023.0f, 0);
 			rgb[2] = _cvtss_sh((y0 * 1.164f + cb0 *  2.112f + cr0 *  0.000f) / 1023.0f, 0);
@@ -171,6 +171,102 @@ void threadProc(char *from, SparkMemBufStruct *to) {
 			rgb[15] = _cvtss_sh((y5 * 1.164f + cb5 *  0.000f + cr5 *  1.793f) / 1023.0f, 0);
 			rgb[16] = _cvtss_sh((y5 * 1.164f + cb5 * -0.213f + cr5 * -0.533f) / 1023.0f, 0);
 			rgb[17] = _cvtss_sh((y5 * 1.164f + cb5 *  2.112f + cr5 *  0.000f) / 1023.0f, 0);
+
+			// Move to next 32-byte v210 chunk
+			v210 += 4;
+			rgb += 6 * 3;
+		}
+	}
+}
+
+void threadProc(char *from, SparkMemBufStruct *to) {
+	unsigned long offset, pixels;
+	sparkMpInfo(&offset, &pixels);
+	int thread = round(threadcount * (float)offset / (w * h));
+	int rowcount = h / threadcount;
+	int rowstart = thread * rowcount;
+
+	// Last thread also gets remaining rows when height is not divisible by threadcount
+	if(thread == threadcount - 1) rowcount += h - (rowcount * threadcount);
+
+	for(int row = rowstart; row < rowstart + rowcount; row++) {
+		half *rgb = (half *)((char *)to->Buffer + row * to->Stride);
+		int *v210 = (int *)((from + v210rowbytes * h) - (row + 1) * v210rowbytes);
+
+		for(int chunk = 0; chunk < w / 6; chunk++) {
+			// Unpack 6 10bit YCbCr pixels from this 4:2:2 v210 format 32-byte chunk
+			float y0 = (v210[0] >> 10) & 0x000003ff;
+			float y1 = (v210[1] >>  0) & 0x000003ff;
+			float y2 = (v210[1] >> 20) & 0x000003ff;
+			float y3 = (v210[2] >> 10) & 0x000003ff;
+			float y4 = (v210[3] >>  0) & 0x000003ff;
+			float y5 = (v210[3] >> 20) & 0x000003ff;
+			float cr0 = (v210[0] >> 20) & 0x000003ff;
+			float cr2 = (v210[2] >>  0) & 0x000003ff;
+			float cr4 = (v210[3] >> 10) & 0x000003ff;
+			float cb0 = (v210[0] >> 00) & 0x000003ff;
+			float cb2 = (v210[1] >> 10) & 0x000003ff;
+			float cb4 = (v210[2] >> 20) & 0x000003ff;
+
+			// We need the next two chroma samples for interpolation
+			float cr6, cb6;
+			if(chunk == (w / 6) - 1) {
+				// ...but not if we would read beyond this row
+				cr6 = cr4;
+				cb6 = cb4;
+			} else {
+				cr6 = (v210[4] >> 20) & 0x000003ff;
+				cb6 = (v210[4] >> 00) & 0x000003ff;
+			}
+
+			// Remove offsets, gains are handled in the matrix below
+			y0 = y0 - 64.0f;
+			y1 = y1 - 64.0f;
+			y2 = y2 - 64.0f;
+			y3 = y3 - 64.0f;
+			y4 = y4 - 64.0f;
+			y5 = y5 - 64.0f;
+			cr0 = cr0 - 512.0f;
+			cr2 = cr2 - 512.0f;
+			cr4 = cr4 - 512.0f;
+			cr6 = cr6 - 512.0f;
+			cb0 = cb0 - 512.0f;
+			cb2 = cb2 - 512.0f;
+			cb4 = cb4 - 512.0f;
+			cb6 = cb6 - 512.0f;
+
+			// Interpolate missing chroma samples from those either side
+			float cr1 = (cr0 + cr2) * 0.5f;
+			float cr3 = (cr2 + cr4) * 0.5f;
+			float cr5 = (cr4 + cr6) * 0.5f;
+			float cb1 = (cb0 + cb2) * 0.5f;
+			float cb3 = (cb2 + cb4) * 0.5f;
+			float cb5 = (cb4 + cb6) * 0.5f;
+
+			// Apply Rec709 YCbCr to RGB matrix
+			rgb[0] = (y0 * 1.164f + cb0 *  0.000f + cr0 *  1.793f) / 1023.0f;
+			rgb[1] = (y0 * 1.164f + cb0 * -0.213f + cr0 * -0.533f) / 1023.0f;
+			rgb[2] = (y0 * 1.164f + cb0 *  2.112f + cr0 *  0.000f) / 1023.0f;
+
+			rgb[3] = (y1 * 1.164f + cb1 *  0.000f + cr1 *  1.793f) / 1023.0f;
+			rgb[4] = (y1 * 1.164f + cb1 * -0.213f + cr1 * -0.533f) / 1023.0f;
+			rgb[5] = (y1 * 1.164f + cb1 *  2.112f + cr1 *  0.000f) / 1023.0f;
+
+			rgb[6] = (y2 * 1.164f + cb2 *  0.000f + cr2 *  1.793f) / 1023.0f;
+			rgb[7] = (y2 * 1.164f + cb2 * -0.213f + cr2 * -0.533f) / 1023.0f;
+			rgb[8] = (y2 * 1.164f + cb2 *  2.112f + cr2 *  0.000f) / 1023.0f;
+
+			rgb[9]  = (y3 * 1.164f + cb3 *  0.000f + cr3 *  1.793f) / 1023.0f;
+			rgb[10] = (y3 * 1.164f + cb3 * -0.213f + cr3 * -0.533f) / 1023.0f;
+			rgb[11] = (y3 * 1.164f + cb3 *  2.112f + cr3 *  0.000f) / 1023.0f;
+
+			rgb[12] = (y4 * 1.164f + cb4 *  0.000f + cr4 *  1.793f) / 1023.0f;
+			rgb[13] = (y4 * 1.164f + cb4 * -0.213f + cr4 * -0.533f) / 1023.0f;
+			rgb[14] = (y4 * 1.164f + cb4 *  2.112f + cr4 *  0.000f) / 1023.0f;
+
+			rgb[15] = (y5 * 1.164f + cb5 *  0.000f + cr5 *  1.793f) / 1023.0f;
+			rgb[16] = (y5 * 1.164f + cb5 * -0.213f + cr5 * -0.533f) / 1023.0f;
+			rgb[17] = (y5 * 1.164f + cb5 *  2.112f + cr5 *  0.000f) / 1023.0f;
 
 			// Move to next 32-byte v210 chunk
 			v210 += 4;
@@ -261,8 +357,14 @@ unsigned int SparkInitialise(SparkInfoStruct si) {
 
 	threadcount = si.NumProcessors;
 	say({"using ", to_string(threadcount), " threads"});
-	avx = __builtin_cpu_supports("avx");
-	if(avx) say({"CPU supports AVX"});
+	int a, b, c, d;
+	__cpuid(1, a, b, c, d);
+	if(c >> 29 & 0x1) f16support = true;
+	if(f16support) {
+		say({"CPU supports F16C hardware half-float conversion"});
+	} else {
+		say({"old CPU, does not support F16C hardware half-float conversion"});
+	}
 
 	w = si.FrameWidth;
 	h = si.FrameHeight;
@@ -319,7 +421,11 @@ unsigned long *SparkProcess(SparkInfoStruct si) {
 
 	SparkMemBufStruct buf;
 	sparkBuf(1, &buf);
-	sparkMpFork((void(*)())threadProc, 2, cbctrl->frontbuf, &buf);
+	if(f16support) {
+		sparkMpFork((void(*)())threadProcF16C, 2, cbctrl->frontbuf, &buf);
+	} else {
+		sparkMpFork((void(*)())threadProc, 2, cbctrl->frontbuf, &buf);
+	}
 
 	clock_gettime(CLOCK_REALTIME, &e);
 	float msc = (e.tv_nsec - s.tv_nsec) / 1000000.0;
