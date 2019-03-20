@@ -1,15 +1,16 @@
 #include <iostream>
 #include <sstream>
+#include <initializer_list>
 #include <sys/time.h>
 #include <unistd.h>
 #include <sys/errno.h>
 #include <sys/mman.h>
 #include <fcntl.h>
+#include <emmintrin.h>
 #include "spark.h"
 #include "half.h"
 #include "decklink/mac/DeckLinkAPI.h"
 #include "dliCb.h"
-#include <initializer_list>
 using namespace std;
 
 /*  TODO:
@@ -92,7 +93,7 @@ void threadProc(char *from, SparkMemBufStruct *to) {
 	if(thread == threadcount - 1) rowcount += h - (rowcount * threadcount);
 
 	for(int row = rowstart; row < rowstart + rowcount; row++) {
-		half *rgb = (half *)((char *)to->Buffer + row * to->Stride);
+		unsigned short *rgb = (unsigned short *)((char *)to->Buffer + row * to->Stride);
 		int *v210 = (int *)((from + v210rowbytes * h) - (row + 1) * v210rowbytes);
 
 		for(int chunk = 0; chunk < w / 6; chunk++) {
@@ -122,54 +123,54 @@ void threadProc(char *from, SparkMemBufStruct *to) {
 			}
 
 			// Remove offsets, gains are handled in the matrix below
-			y0 = y0 - 64.0;
-			y1 = y1 - 64.0;
-			y2 = y2 - 64.0;
-			y3 = y3 - 64.0;
-			y4 = y4 - 64.0;
-			y5 = y5 - 64.0;
-			cr0 = cr0 - 512.0;
-			cr2 = cr2 - 512.0;
-			cr4 = cr4 - 512.0;
-			cr6 = cr6 - 512.0;
-			cb0 = cb0 - 512.0;
-			cb2 = cb2 - 512.0;
-			cb4 = cb4 - 512.0;
-			cb6 = cb6 - 512.0;
+			y0 = y0 - 64.0f;
+			y1 = y1 - 64.0f;
+			y2 = y2 - 64.0f;
+			y3 = y3 - 64.0f;
+			y4 = y4 - 64.0f;
+			y5 = y5 - 64.0f;
+			cr0 = cr0 - 512.0f;
+			cr2 = cr2 - 512.0f;
+			cr4 = cr4 - 512.0f;
+			cr6 = cr6 - 512.0f;
+			cb0 = cb0 - 512.0f;
+			cb2 = cb2 - 512.0f;
+			cb4 = cb4 - 512.0f;
+			cb6 = cb6 - 512.0f;
 
 			// Interpolate missing chroma samples from those either side
-			float cr1 = (cr0 + cr2) * 0.5;
-			float cr3 = (cr2 + cr4) * 0.5;
-			float cr5 = (cr4 + cr6) * 0.5;
-			float cb1 = (cb0 + cb2) * 0.5;
-			float cb3 = (cb2 + cb4) * 0.5;
-			float cb5 = (cb4 + cb6) * 0.5;
+			float cr1 = (cr0 + cr2) * 0.5f;
+			float cr3 = (cr2 + cr4) * 0.5f;
+			float cr5 = (cr4 + cr6) * 0.5f;
+			float cb1 = (cb0 + cb2) * 0.5f;
+			float cb3 = (cb2 + cb4) * 0.5f;
+			float cb5 = (cb4 + cb6) * 0.5f;
 
 			// Apply Rec709 YCbCr to RGB matrix
 			// Could use: unsigned short _cvtss_sh(float x, int imm)
-			rgb[0] = (y0 * 1.164 + cb0 *  0.000 + cr0 *  1.793) / 1023.0;
-			rgb[1] = (y0 * 1.164 + cb0 * -0.213 + cr0 * -0.533) / 1023.0;
-			rgb[2] = (y0 * 1.164 + cb0 *  2.112 + cr0 *  0.000) / 1023.0;
+			rgb[0] = _cvtss_sh((y0 * 1.164f + cb0 *  0.000f + cr0 *  1.793f) / 1023.0f, 0);
+			rgb[1] = _cvtss_sh((y0 * 1.164f + cb0 * -0.213f + cr0 * -0.533f) / 1023.0f, 0);
+			rgb[2] = _cvtss_sh((y0 * 1.164f + cb0 *  2.112f + cr0 *  0.000f) / 1023.0f, 0);
 
-			rgb[3] = (y1 * 1.164 + cb1 *  0.000 + cr1 *  1.793) / 1023.0;
-			rgb[4] = (y1 * 1.164 + cb1 * -0.213 + cr1 * -0.533) / 1023.0;
-			rgb[5] = (y1 * 1.164 + cb1 *  2.112 + cr1 *  0.000) / 1023.0;
+			rgb[3] = _cvtss_sh((y1 * 1.164f + cb1 *  0.000f + cr1 *  1.793f) / 1023.0f, 0);
+			rgb[4] = _cvtss_sh((y1 * 1.164f + cb1 * -0.213f + cr1 * -0.533f) / 1023.0f, 0);
+			rgb[5] = _cvtss_sh((y1 * 1.164f + cb1 *  2.112f + cr1 *  0.000f) / 1023.0f, 0);
 
-			rgb[6] = (y2 * 1.164 + cb2 *  0.000 + cr2 *  1.793) / 1023.0;
-			rgb[7] = (y2 * 1.164 + cb2 * -0.213 + cr2 * -0.533) / 1023.0;
-			rgb[8] = (y2 * 1.164 + cb2 *  2.112 + cr2 *  0.000) / 1023.0;
+			rgb[6] = _cvtss_sh((y2 * 1.164f + cb2 *  0.000f + cr2 *  1.793f) / 1023.0f, 0);
+			rgb[7] = _cvtss_sh((y2 * 1.164f + cb2 * -0.213f + cr2 * -0.533f) / 1023.0f, 0);
+			rgb[8] = _cvtss_sh((y2 * 1.164f + cb2 *  2.112f + cr2 *  0.000f) / 1023.0f, 0);
 
-			rgb[9]  = (y3 * 1.164 + cb3 *  0.000 + cr3 *  1.793) / 1023.0;
-			rgb[10] = (y3 * 1.164 + cb3 * -0.213 + cr3 * -0.533) / 1023.0;
-			rgb[11] = (y3 * 1.164 + cb3 *  2.112 + cr3 *  0.000) / 1023.0;
+			rgb[9]  = _cvtss_sh((y3 * 1.164f + cb3 *  0.000f + cr3 *  1.793f) / 1023.0f, 0);
+			rgb[10] = _cvtss_sh((y3 * 1.164f + cb3 * -0.213f + cr3 * -0.533f) / 1023.0f, 0);
+			rgb[11] = _cvtss_sh((y3 * 1.164f + cb3 *  2.112f + cr3 *  0.000f) / 1023.0f, 0);
 
-			rgb[12] = (y4 * 1.164 + cb4 *  0.000 + cr4 *  1.793) / 1023.0;
-			rgb[13] = (y4 * 1.164 + cb4 * -0.213 + cr4 * -0.533) / 1023.0;
-			rgb[14] = (y4 * 1.164 + cb4 *  2.112 + cr4 *  0.000) / 1023.0;
+			rgb[12] = _cvtss_sh((y4 * 1.164f + cb4 *  0.000f + cr4 *  1.793f) / 1023.0f, 0);
+			rgb[13] = _cvtss_sh((y4 * 1.164f + cb4 * -0.213f + cr4 * -0.533f) / 1023.0f, 0);
+			rgb[14] = _cvtss_sh((y4 * 1.164f + cb4 *  2.112f + cr4 *  0.000f) / 1023.0f, 0);
 
-			rgb[15] = (y5 * 1.164 + cb5 *  0.000 + cr5 *  1.793) / 1023.0;
-			rgb[16] = (y5 * 1.164 + cb5 * -0.213 + cr5 * -0.533) / 1023.0;
-			rgb[17] = (y5 * 1.164 + cb5 *  2.112 + cr5 *  0.000) / 1023.0;
+			rgb[15] = _cvtss_sh((y5 * 1.164f + cb5 *  0.000f + cr5 *  1.793f) / 1023.0f, 0);
+			rgb[16] = _cvtss_sh((y5 * 1.164f + cb5 * -0.213f + cr5 * -0.533f) / 1023.0f, 0);
+			rgb[17] = _cvtss_sh((y5 * 1.164f + cb5 *  2.112f + cr5 *  0.000f) / 1023.0f, 0);
 
 			// Move to next 32-byte v210 chunk
 			v210 += 4;
