@@ -21,7 +21,6 @@ using namespace std;
 		yuv headroom
 		ram record n playback
 		could we uhhh... do this as an OFX plugin, and on the GPU?
-		technically the F16C 
 		note in readme that building on macos requires older xcode
 		note in readme referring to robert hodgkin's code apologia
 
