@@ -1,5 +1,5 @@
-# Remember some people do still have Core2Duos or whatever...
-CFLAGS = -std=c++11 -march=westmere -mtune=native -mf16c -fPIC -DDL_LITTLE_ENDIAN -O3 -Wno-deprecated-register
+CC = clang
+CFLAGS = -std=c++11 -march=westmere -mtune=native -mf16c -fPIC -DDL_LITTLE_ENDIAN -O3 -Wno-deprecated-register -Wno-multichar
 LDFLAGS = -fPIC
 
 ifeq ($(shell uname), Darwin)
@@ -16,16 +16,16 @@ endif
 all: HDMIsupply.$(EXT)
 
 HDMIsupply.$(EXT): HDMIsupply.o dliCb.o DeckLinkAPIDispatch.o Makefile
-	g++ $(LDFLAGS) HDMIsupply.o dliCb.o DeckLinkAPIDispatch.o -o HDMIsupply.$(EXT)
+	$(CC) $(LDFLAGS) HDMIsupply.o dliCb.o DeckLinkAPIDispatch.o -o HDMIsupply.$(EXT)
 
 HDMIsupply.o: HDMIsupply.cpp *.h Makefile spark.h
-	g++ $(CFLAGS) -c HDMIsupply.cpp
+	$(CC) $(CFLAGS) -c HDMIsupply.cpp
 
 dliCb.o: dliCb.cpp *.h Makefile
-	g++ $(CFLAGS) -c dliCb.cpp
+	$(CC) $(CFLAGS) -c dliCb.cpp
 
 DeckLinkAPIDispatch.o: decklink/mac/DeckLinkAPIDispatch.cpp *.h Makefile
-	g++ $(CFLAGS) -c decklink/mac/DeckLinkAPIDispatch.cpp
+	$(CC) $(CFLAGS) -c decklink/mac/DeckLinkAPIDispatch.cpp
 
 spark.h: Makefile
 	ln -sf `ls /opt/Autodesk/presets/*/sparks/spark.h | head -n1` spark.h

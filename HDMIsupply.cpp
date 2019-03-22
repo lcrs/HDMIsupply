@@ -7,6 +7,7 @@
 #include <sys/mman.h>
 #include <fcntl.h>
 #include <emmintrin.h>
+#include <immintrin.h>
 #include <cpuid.h>
 #include "spark.h"
 #include "half.h"
@@ -26,7 +27,6 @@ using namespace std;
 
 	PERF TODO:
 		outputting 12bit and letting flame convert to half float might be faster
-		check gcc vs clang
 		pixfc's v210-to-r210 then our 10bit-to-half conversion?
 		increase the ref count of the IDeckLinkVideoInputFrame instead of memcpy()?
 */
