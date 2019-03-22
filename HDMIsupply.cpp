@@ -63,11 +63,11 @@ void err(initializer_list<string> v) {
 
 int sparkBuf(int n, SparkMemBufStruct *b) {
 	if(!sparkMemGetBuffer(n, b)) {
-		cout << "HDMIsupply: sparkMemGetBuffer() failed: " << n << endl;
+		say({"sparkMemGetBuffer() failed: ", to_string(n)});
 		return 0;
 	}
 	if(!(b->BufState & MEMBUF_LOCKED)) {
-		cout << "HDMIsupply: buffer " << n << " not locked" << endl;
+		say({"spark buffer ", to_string(n), " not locked"});
 		return 0;
 	}
 	return 1;
