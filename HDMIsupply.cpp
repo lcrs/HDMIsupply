@@ -15,7 +15,21 @@
 #include "dliCb.h"
 using namespace std;
 
-/*  TODO:
+/* How this works, generally speaking:
+	The first time an instance of this Spark is created it sets up the DeckLink
+	and starts the capture, which causes the DeckLink API to call our
+	dliCb::VideoInputFrameArrived() method repeatedly from another thread.  There we
+	simply copy the provided YUV v210 buffer into our own memory there and return
+	quickly.
+
+	When Flame calls SparkProcess() we then convert the most recently copied buffer
+	into the required format, sliced across several threads for speed.
+
+	After the first instance, subsequent ones check for a POSIX SHM file and pick
+	up pointers to the buffers used in the callback thread, since it's not possible
+	to have the DeckLink device opened more than once.
+
+	TODO:
 		first processed frame usually black because callback thread hasn't run yet
 		i'm too chicken to free() anything given the unpredictable order of instance destruction
 		ram record n playback?
@@ -24,6 +38,8 @@ using namespace std;
 		outputting 12bit and letting flame convert to half float might be faster
 		pixfc's v210-to-r210 then our 10bit-to-half conversion?
 		increase the ref count of the IDeckLinkVideoInputFrame instead of memcpy()?
+
+	lewis@lewissaunders.com
 */
 
 // Globals for this instance only
