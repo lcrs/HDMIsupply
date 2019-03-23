@@ -17,8 +17,8 @@ using namespace std;
 
 /*  TODO:
 		first processed frame usually black because callback thread hasn't run yet
+		can't hotplug DeckLink after first instance has initialized, have to quit
 		at least one call to free() would be polite
-		visual frame drop indicator
 		yuv headroom
 		ram record n playback
 		could we uhhh... do this as an OFX plugin, and on the GPU?
@@ -430,6 +430,19 @@ unsigned long *SparkProcess(SparkInfoStruct si) {
 	float msc = (e.tv_nsec - s.tv_nsec) / 1000000.0;
 	if(msc < 0.0) msc += 1000.0;
 	say({to_string(msp), "ms since last call ", to_string(msc), "ms to convert buffer"});
+
+	static long nframes;
+	static float timeacc;
+	nframes++;
+	timeacc += msp;
+	if(timeacc > 2000.0) {
+		ostringstream m;
+		m.precision(5);
+		m << "HDMIsupply averaging " << 1000.0 * nframes/timeacc << "fps" << endl;
+		sparkMessage(m.str().c_str());
+		timeacc = 0.0;
+		nframes = 0;
+	}
 
 	return buf.Buffer; // N.B. this is some bullshit, the pointer returned is rudely ignored
 }
