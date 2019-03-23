@@ -26,14 +26,18 @@ using namespace std;
 		increase the ref count of the IDeckLinkVideoInputFrame instead of memcpy()?
 */
 
+// Globals for this instance only
 IDeckLinkInput *dlin = NULL;
 dliCb cb;
-struct cbctrl_t *cbctrl = NULL;
-char *shmfile = NULL;
 int threadcount, w, h, v210rowbytes;
 bool debuglog = false;
 bool f16support = false;
+char *shmfile = NULL;
 
+// This will point to the shared struct created by the first instance
+struct cbctrl_t *cbctrl = NULL;
+
+// Callback called when YUV headroom button is tapped
 unsigned long *yuvheadroomcb(int what, SparkInfoStruct si) {
 	sparkReprocess();
 	return 0;
@@ -44,7 +48,7 @@ SparkBooleanStruct SparkBoolean16 = {
   yuvheadroomcb
 };
 
-
+// Print messages
 void say(initializer_list<string> v) {
 	if(!debuglog) return;
 	cout << "HDMIsupply: ";
@@ -55,6 +59,7 @@ void say(initializer_list<string> v) {
 	cout << endl;
 }
 
+// Print actual errors
 void err(initializer_list<string> v) {
 	ostringstream s;
 	s << "HDMIsupply: ";
@@ -67,6 +72,7 @@ void err(initializer_list<string> v) {
 	sparkError(s.str().c_str());
 }
 
+// Check buffer we're passed by the Spark API is usable
 int sparkBuf(int n, SparkMemBufStruct *b) {
 	if(!sparkMemGetBuffer(n, b)) {
 		say({"sparkMemGetBuffer() failed: ", to_string(n)});
@@ -79,6 +85,7 @@ int sparkBuf(int n, SparkMemBufStruct *b) {
 	return 1;
 }
 
+// Tell host app we only support 16bit half float output
 int SparkIsInputFormatSupported(SparkPixelFormat fmt) {
 	switch(fmt) {
 		case SPARKBUF_RGB_48_3x16_FP:
@@ -88,6 +95,7 @@ int SparkIsInputFormatSupported(SparkPixelFormat fmt) {
 	}
 }
 
+// Converts slice of v210 buffer to RGB half float, with hardware conversion
 void threadProcF16C(char *from, SparkMemBufStruct *to) {
 	unsigned long offset, pixels;
 	sparkMpInfo(&offset, &pixels);
@@ -192,6 +200,7 @@ void threadProcF16C(char *from, SparkMemBufStruct *to) {
 	}
 }
 
+// Converts slice of v210 buffer to RGB half float, software only using OpenEXR's half class
 void threadProc(char *from, SparkMemBufStruct *to) {
 	unsigned long offset, pixels;
 	sparkMpInfo(&offset, &pixels);
@@ -296,6 +305,7 @@ void threadProc(char *from, SparkMemBufStruct *to) {
 	}
 }
 
+// Release the DeckLink device and remove our SHM coordination file
 void stopHDMI(void) {
 	say({"stopping streams..."});
 	if(cbctrl != NULL) cbctrl->streaming = false;
@@ -311,6 +321,7 @@ void stopHDMI(void) {
 	}
 }
 
+// Setup and start the DeckLink capture
 void startHDMI(void) {
 	// Create new control struct and buffers
 	say({"starting new instance"});
@@ -372,6 +383,7 @@ void startHDMI(void) {
 	say({"input started at ", to_string(fps), "fps"});
 }
 
+// Start a new instance
 unsigned int SparkInitialise(SparkInfoStruct si) {
 	if(getenv("HDMISUPPLY_DEBUG")) debuglog = true;
 	say({"initialising"});
@@ -423,6 +435,7 @@ unsigned int SparkInitialise(SparkInfoStruct si) {
 	return SPARK_MODULE;
 }
 
+// Process a frame
 unsigned long *SparkProcess(SparkInfoStruct si) {
 	if(w != 1920 || h != 1080) {
 		err({"resolution is not 1920x1080, cannot process!"});
@@ -469,11 +482,12 @@ unsigned long *SparkProcess(SparkInfoStruct si) {
 	return buf.Buffer; // N.B. this is some bullshit, the pointer returned is rudely ignored
 }
 
-void SparkUnInitialise(SparkInfoStruct si) {
-}
-
+// We don't take any input clips, only generate an output
 int SparkClips(void) {
 	return 0;
+}
+
+void SparkUnInitialise(SparkInfoStruct si) {
 }
 
 void SparkMemoryTempBuffers(void) {
