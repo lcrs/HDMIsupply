@@ -17,13 +17,9 @@ using namespace std;
 
 /*  TODO:
 		first processed frame usually black because callback thread hasn't run yet
-		can't hotplug DeckLink after first instance has initialized, have to quit
-		at least one call to free() would be polite
+		i'm too chicken to free() anything given the unpredictable order of instance destruction
 		yuv headroom
 		ram record n playback
-		could we uhhh... do this as an OFX plugin, and on the GPU?
-		note in readme that building on macos requires older xcode
-		note in readme referring to robert hodgkin's code apologia
 
 	PERF TODO:
 		outputting 12bit and letting flame convert to half float might be faster
@@ -281,11 +277,11 @@ void stopHDMI(void) {
 		dlin->StopStreams();
 		dlin->DisableVideoInput();
 		say({"streams stopped and input disabled"});
-		if(shmfile != NULL) {
-			shm_unlink(shmfile);
-			shmfile = NULL;
-			say({"shm file removed"});
-		}
+	}
+	if(shmfile != NULL) {
+		shm_unlink(shmfile);
+		shmfile = NULL;
+		say({"shm file removed"});
 	}
 }
 
