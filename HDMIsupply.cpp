@@ -18,8 +18,7 @@ using namespace std;
 /*  TODO:
 		first processed frame usually black because callback thread hasn't run yet
 		i'm too chicken to free() anything given the unpredictable order of instance destruction
-		yuv headroom
-		ram record n playback
+		ram record n playback?
 
 	PERF TODO:
 		outputting 12bit and letting flame convert to half float might be faster
@@ -29,11 +28,22 @@ using namespace std;
 
 IDeckLinkInput *dlin = NULL;
 dliCb cb;
-int threadcount, w, h, v210rowbytes;
 struct cbctrl_t *cbctrl = NULL;
 char *shmfile = NULL;
+int threadcount, w, h, v210rowbytes;
 bool debuglog = false;
 bool f16support = false;
+
+unsigned long *yuvheadroomcb(int what, SparkInfoStruct si) {
+	sparkReprocess();
+	return 0;
+}
+SparkBooleanStruct SparkBoolean16 = {
+  0,
+  (char *) "YUV headroom",
+  yuvheadroomcb
+};
+
 
 void say(initializer_list<string> v) {
 	if(!debuglog) return;
@@ -88,6 +98,14 @@ void threadProcF16C(char *from, SparkMemBufStruct *to) {
 	// Last thread also gets remaining rows when height is not divisible by threadcount
 	if(thread == threadcount - 1) rowcount += h - (rowcount * threadcount);
 
+	float yoffset = 64.0f;
+	float ygain = 1.164f;
+	if(SparkBoolean16.Value) {
+		// Include Y headroom, 0-255 instead of 16-235
+		yoffset = 0.0f;
+		ygain = 1.0f;
+	}
+
 	for(int row = rowstart; row < rowstart + rowcount; row++) {
 		unsigned short *rgb = (unsigned short *)((char *)to->Buffer + row * to->Stride);
 		int *v210 = (int *)((from + v210rowbytes * h) - (row + 1) * v210rowbytes);
@@ -119,12 +137,12 @@ void threadProcF16C(char *from, SparkMemBufStruct *to) {
 			}
 
 			// Remove offsets, gains are handled in the matrix below
-			y0 = y0 - 64.0f;
-			y1 = y1 - 64.0f;
-			y2 = y2 - 64.0f;
-			y3 = y3 - 64.0f;
-			y4 = y4 - 64.0f;
-			y5 = y5 - 64.0f;
+			y0 = y0 - yoffset;
+			y1 = y1 - yoffset;
+			y2 = y2 - yoffset;
+			y3 = y3 - yoffset;
+			y4 = y4 - yoffset;
+			y5 = y5 - yoffset;
 			cr0 = cr0 - 512.0f;
 			cr2 = cr2 - 512.0f;
 			cr4 = cr4 - 512.0f;
@@ -143,29 +161,29 @@ void threadProcF16C(char *from, SparkMemBufStruct *to) {
 			float cb5 = (cb4 + cb6) * 0.5f;
 
 			// Apply Rec709 YCbCr to RGB matrix
-			rgb[0] = _cvtss_sh((y0 * 1.164f + cb0 *  0.000f + cr0 *  1.793f) / 1023.0f, 0);
-			rgb[1] = _cvtss_sh((y0 * 1.164f + cb0 * -0.213f + cr0 * -0.533f) / 1023.0f, 0);
-			rgb[2] = _cvtss_sh((y0 * 1.164f + cb0 *  2.112f + cr0 *  0.000f) / 1023.0f, 0);
+			rgb[0] = _cvtss_sh((y0 * ygain + cb0 *  0.000f + cr0 *  1.793f) / 1023.0f, 0);
+			rgb[1] = _cvtss_sh((y0 * ygain + cb0 * -0.213f + cr0 * -0.533f) / 1023.0f, 0);
+			rgb[2] = _cvtss_sh((y0 * ygain + cb0 *  2.112f + cr0 *  0.000f) / 1023.0f, 0);
 
-			rgb[3] = _cvtss_sh((y1 * 1.164f + cb1 *  0.000f + cr1 *  1.793f) / 1023.0f, 0);
-			rgb[4] = _cvtss_sh((y1 * 1.164f + cb1 * -0.213f + cr1 * -0.533f) / 1023.0f, 0);
-			rgb[5] = _cvtss_sh((y1 * 1.164f + cb1 *  2.112f + cr1 *  0.000f) / 1023.0f, 0);
+			rgb[3] = _cvtss_sh((y1 * ygain + cb1 *  0.000f + cr1 *  1.793f) / 1023.0f, 0);
+			rgb[4] = _cvtss_sh((y1 * ygain + cb1 * -0.213f + cr1 * -0.533f) / 1023.0f, 0);
+			rgb[5] = _cvtss_sh((y1 * ygain + cb1 *  2.112f + cr1 *  0.000f) / 1023.0f, 0);
 
-			rgb[6] = _cvtss_sh((y2 * 1.164f + cb2 *  0.000f + cr2 *  1.793f) / 1023.0f, 0);
-			rgb[7] = _cvtss_sh((y2 * 1.164f + cb2 * -0.213f + cr2 * -0.533f) / 1023.0f, 0);
-			rgb[8] = _cvtss_sh((y2 * 1.164f + cb2 *  2.112f + cr2 *  0.000f) / 1023.0f, 0);
+			rgb[6] = _cvtss_sh((y2 * ygain + cb2 *  0.000f + cr2 *  1.793f) / 1023.0f, 0);
+			rgb[7] = _cvtss_sh((y2 * ygain + cb2 * -0.213f + cr2 * -0.533f) / 1023.0f, 0);
+			rgb[8] = _cvtss_sh((y2 * ygain + cb2 *  2.112f + cr2 *  0.000f) / 1023.0f, 0);
 
-			rgb[9]  = _cvtss_sh((y3 * 1.164f + cb3 *  0.000f + cr3 *  1.793f) / 1023.0f, 0);
-			rgb[10] = _cvtss_sh((y3 * 1.164f + cb3 * -0.213f + cr3 * -0.533f) / 1023.0f, 0);
-			rgb[11] = _cvtss_sh((y3 * 1.164f + cb3 *  2.112f + cr3 *  0.000f) / 1023.0f, 0);
+			rgb[9]  = _cvtss_sh((y3 * ygain + cb3 *  0.000f + cr3 *  1.793f) / 1023.0f, 0);
+			rgb[10] = _cvtss_sh((y3 * ygain + cb3 * -0.213f + cr3 * -0.533f) / 1023.0f, 0);
+			rgb[11] = _cvtss_sh((y3 * ygain + cb3 *  2.112f + cr3 *  0.000f) / 1023.0f, 0);
 
-			rgb[12] = _cvtss_sh((y4 * 1.164f + cb4 *  0.000f + cr4 *  1.793f) / 1023.0f, 0);
-			rgb[13] = _cvtss_sh((y4 * 1.164f + cb4 * -0.213f + cr4 * -0.533f) / 1023.0f, 0);
-			rgb[14] = _cvtss_sh((y4 * 1.164f + cb4 *  2.112f + cr4 *  0.000f) / 1023.0f, 0);
+			rgb[12] = _cvtss_sh((y4 * ygain + cb4 *  0.000f + cr4 *  1.793f) / 1023.0f, 0);
+			rgb[13] = _cvtss_sh((y4 * ygain + cb4 * -0.213f + cr4 * -0.533f) / 1023.0f, 0);
+			rgb[14] = _cvtss_sh((y4 * ygain + cb4 *  2.112f + cr4 *  0.000f) / 1023.0f, 0);
 
-			rgb[15] = _cvtss_sh((y5 * 1.164f + cb5 *  0.000f + cr5 *  1.793f) / 1023.0f, 0);
-			rgb[16] = _cvtss_sh((y5 * 1.164f + cb5 * -0.213f + cr5 * -0.533f) / 1023.0f, 0);
-			rgb[17] = _cvtss_sh((y5 * 1.164f + cb5 *  2.112f + cr5 *  0.000f) / 1023.0f, 0);
+			rgb[15] = _cvtss_sh((y5 * ygain + cb5 *  0.000f + cr5 *  1.793f) / 1023.0f, 0);
+			rgb[16] = _cvtss_sh((y5 * ygain + cb5 * -0.213f + cr5 * -0.533f) / 1023.0f, 0);
+			rgb[17] = _cvtss_sh((y5 * ygain + cb5 *  2.112f + cr5 *  0.000f) / 1023.0f, 0);
 
 			// Move to next 32-byte v210 chunk
 			v210 += 4;
@@ -183,6 +201,14 @@ void threadProc(char *from, SparkMemBufStruct *to) {
 
 	// Last thread also gets remaining rows when height is not divisible by threadcount
 	if(thread == threadcount - 1) rowcount += h - (rowcount * threadcount);
+
+	float yoffset = 64.0f;
+	float ygain = 1.164f;
+	if(SparkBoolean16.Value) {
+		// Include Y headroom, 0-255 instead of 16-235
+		yoffset = 0.0f;
+		ygain = 1.0f;
+	}
 
 	for(int row = rowstart; row < rowstart + rowcount; row++) {
 		half *rgb = (half *)((char *)to->Buffer + row * to->Stride);
@@ -215,12 +241,12 @@ void threadProc(char *from, SparkMemBufStruct *to) {
 			}
 
 			// Remove offsets, gains are handled in the matrix below
-			y0 = y0 - 64.0f;
-			y1 = y1 - 64.0f;
-			y2 = y2 - 64.0f;
-			y3 = y3 - 64.0f;
-			y4 = y4 - 64.0f;
-			y5 = y5 - 64.0f;
+			y0 = y0 - yoffset;
+			y1 = y1 - yoffset;
+			y2 = y2 - yoffset;
+			y3 = y3 - yoffset;
+			y4 = y4 - yoffset;
+			y5 = y5 - yoffset;
 			cr0 = cr0 - 512.0f;
 			cr2 = cr2 - 512.0f;
 			cr4 = cr4 - 512.0f;
@@ -239,29 +265,29 @@ void threadProc(char *from, SparkMemBufStruct *to) {
 			float cb5 = (cb4 + cb6) * 0.5f;
 
 			// Apply Rec709 YCbCr to RGB matrix
-			rgb[0] = (y0 * 1.164f + cb0 *  0.000f + cr0 *  1.793f) / 1023.0f;
-			rgb[1] = (y0 * 1.164f + cb0 * -0.213f + cr0 * -0.533f) / 1023.0f;
-			rgb[2] = (y0 * 1.164f + cb0 *  2.112f + cr0 *  0.000f) / 1023.0f;
+			rgb[0] = (y0 * ygain + cb0 *  0.000f + cr0 *  1.793f) / 1023.0f;
+			rgb[1] = (y0 * ygain + cb0 * -0.213f + cr0 * -0.533f) / 1023.0f;
+			rgb[2] = (y0 * ygain + cb0 *  2.112f + cr0 *  0.000f) / 1023.0f;
 
-			rgb[3] = (y1 * 1.164f + cb1 *  0.000f + cr1 *  1.793f) / 1023.0f;
-			rgb[4] = (y1 * 1.164f + cb1 * -0.213f + cr1 * -0.533f) / 1023.0f;
-			rgb[5] = (y1 * 1.164f + cb1 *  2.112f + cr1 *  0.000f) / 1023.0f;
+			rgb[3] = (y1 * ygain + cb1 *  0.000f + cr1 *  1.793f) / 1023.0f;
+			rgb[4] = (y1 * ygain + cb1 * -0.213f + cr1 * -0.533f) / 1023.0f;
+			rgb[5] = (y1 * ygain + cb1 *  2.112f + cr1 *  0.000f) / 1023.0f;
 
-			rgb[6] = (y2 * 1.164f + cb2 *  0.000f + cr2 *  1.793f) / 1023.0f;
-			rgb[7] = (y2 * 1.164f + cb2 * -0.213f + cr2 * -0.533f) / 1023.0f;
-			rgb[8] = (y2 * 1.164f + cb2 *  2.112f + cr2 *  0.000f) / 1023.0f;
+			rgb[6] = (y2 * ygain + cb2 *  0.000f + cr2 *  1.793f) / 1023.0f;
+			rgb[7] = (y2 * ygain + cb2 * -0.213f + cr2 * -0.533f) / 1023.0f;
+			rgb[8] = (y2 * ygain + cb2 *  2.112f + cr2 *  0.000f) / 1023.0f;
 
-			rgb[9]  = (y3 * 1.164f + cb3 *  0.000f + cr3 *  1.793f) / 1023.0f;
-			rgb[10] = (y3 * 1.164f + cb3 * -0.213f + cr3 * -0.533f) / 1023.0f;
-			rgb[11] = (y3 * 1.164f + cb3 *  2.112f + cr3 *  0.000f) / 1023.0f;
+			rgb[9]  = (y3 * ygain + cb3 *  0.000f + cr3 *  1.793f) / 1023.0f;
+			rgb[10] = (y3 * ygain + cb3 * -0.213f + cr3 * -0.533f) / 1023.0f;
+			rgb[11] = (y3 * ygain + cb3 *  2.112f + cr3 *  0.000f) / 1023.0f;
 
-			rgb[12] = (y4 * 1.164f + cb4 *  0.000f + cr4 *  1.793f) / 1023.0f;
-			rgb[13] = (y4 * 1.164f + cb4 * -0.213f + cr4 * -0.533f) / 1023.0f;
-			rgb[14] = (y4 * 1.164f + cb4 *  2.112f + cr4 *  0.000f) / 1023.0f;
+			rgb[12] = (y4 * ygain + cb4 *  0.000f + cr4 *  1.793f) / 1023.0f;
+			rgb[13] = (y4 * ygain + cb4 * -0.213f + cr4 * -0.533f) / 1023.0f;
+			rgb[14] = (y4 * ygain + cb4 *  2.112f + cr4 *  0.000f) / 1023.0f;
 
-			rgb[15] = (y5 * 1.164f + cb5 *  0.000f + cr5 *  1.793f) / 1023.0f;
-			rgb[16] = (y5 * 1.164f + cb5 * -0.213f + cr5 * -0.533f) / 1023.0f;
-			rgb[17] = (y5 * 1.164f + cb5 *  2.112f + cr5 *  0.000f) / 1023.0f;
+			rgb[15] = (y5 * ygain + cb5 *  0.000f + cr5 *  1.793f) / 1023.0f;
+			rgb[16] = (y5 * ygain + cb5 * -0.213f + cr5 * -0.533f) / 1023.0f;
+			rgb[17] = (y5 * ygain + cb5 *  2.112f + cr5 *  0.000f) / 1023.0f;
 
 			// Move to next 32-byte v210 chunk
 			v210 += 4;
@@ -288,9 +314,9 @@ void stopHDMI(void) {
 void startHDMI(void) {
 	// Create new control struct and buffers
 	say({"starting new instance"});
-	cbctrl = (cbctrl_t *)malloc(sizeof(cbctrl_t));
-	cbctrl->frontbuf = (char *)malloc(v210rowbytes * h);
-	cbctrl->backbuf = (char *)malloc(v210rowbytes * h);
+	cbctrl = (cbctrl_t *)calloc(1, sizeof(cbctrl_t));
+	cbctrl->frontbuf = (char *)calloc(1, v210rowbytes * h);
+	cbctrl->backbuf = (char *)calloc(1, v210rowbytes * h);
 	cbctrl->streaming = false;
 
 	// Share pointer to control struct for future instances to pick up
