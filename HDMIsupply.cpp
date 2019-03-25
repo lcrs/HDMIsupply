@@ -19,8 +19,7 @@ using namespace std;
 	The first time an instance of this Spark is created it sets up the DeckLink
 	and starts the capture, which causes the DeckLink API to call our
 	dliCb::VideoInputFrameArrived() method repeatedly from another thread.  There we
-	simply copy the provided YUV v210 buffer into our own memory there and return
-	quickly.
+	simply copy the provided YUV v210 buffer into our own memory and return	quickly.
 
 	When Flame calls SparkProcess() we then convert the most recently copied buffer
 	into the required format, sliced across several threads for speed.
@@ -53,7 +52,7 @@ char *shmfile = NULL;
 // This will point to the shared struct created by the first instance
 struct cbctrl_t *cbctrl = NULL;
 
-// Callback called when YUV headroom button is tapped
+// Callback for when YUV headroom button is tapped
 unsigned long *yuvheadroomcb(int what, SparkInfoStruct si) {
 	sparkReprocess();
 	return 0;

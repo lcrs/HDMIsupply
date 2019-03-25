@@ -1,9 +1,6 @@
-// The class which handles the frame received callback
-// from the Decklink API
+// The class which handles the frame received callback from the Decklink API
 
-#include <iostream>
 #include "dliCb.h"
-using namespace std;
 
 extern cbctrl_t *cbctrl;
 extern int w, h, v210rowbytes;
