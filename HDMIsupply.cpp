@@ -362,14 +362,14 @@ void startHDMI(void) {
 
 	// Set up DeckLink device and start its streams
 	double fps = sparkFrameRate();
-	BMDDisplayMode dm = bmdModeHD1080p2398;
-	if(fps == 24.0) dm = bmdModeHD1080p24;
-	if(fps == 25.0) dm = bmdModeHD1080p25;
-	if(abs(fps - 29.97) < 0.01) dm = bmdModeHD1080p2997;
-	if(fps == 30.0) dm = bmdModeHD1080p30;
-	if(fps == 50.0) dm = bmdModeHD1080p50;
-	if(abs(fps - 59.94) < 0.01) dm = bmdModeHD1080p5994;
-	if(fps == 60.0) dm = bmdModeHD1080p6000;
+	BMDDisplayMode dm = bmdMode4K2160p2398;
+	if(fps == 24.0) dm = bmdMode4K2160p24;
+	if(fps == 25.0) dm = bmdMode4K2160p25;
+	if(abs(fps - 29.97) < 0.01) dm = bmdMode4K2160p2997;
+	if(fps == 30.0) dm = bmdMode4K2160p30;
+	if(fps == 50.0) dm = bmdMode4K2160p50;
+	if(abs(fps - 59.94) < 0.01) dm = bmdMode4K2160p5994;
+	if(fps == 60.0) dm = bmdMode4K2160p60;
 
 	IDeckLink *dl;
 	IDeckLinkIterator *dli = CreateDeckLinkIteratorInstance();
@@ -417,7 +417,7 @@ unsigned int SparkInitialise(SparkInfoStruct si) {
 	w = si.FrameWidth;
 	h = si.FrameHeight;
 	say({"resolution is ",  to_string(w), "x", to_string(h)});
-	if(w != 1920 || h != 1080) {
+	if(w != 3840 || h != 2160) {
 		err({"resolution is not 1920x1080, cannot start!"});
 		return SPARK_MODULE;
 	}
@@ -452,7 +452,7 @@ unsigned int SparkInitialise(SparkInfoStruct si) {
 
 // Process a frame
 unsigned long *SparkProcess(SparkInfoStruct si) {
-	if(w != 1920 || h != 1080) {
+	if(w != 3840 || h != 2160) {
 		err({"resolution is not 1920x1080, cannot process!"});
 		return 0;
 	}
